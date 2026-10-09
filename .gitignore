@@ -1,0 +1,18 @@
+# Build output
+bin/
+obj/
+publish/
+artifacts/
+Releases/
+*.user
+*.suo
+.vs/
+.idea/
+TestResults/
+
+# Models and native runtimes are downloaded, never committed
+models/
+*.onnx
+*.onnx.data
+*.gguf
+runtimes-cache/
