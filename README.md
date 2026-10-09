@@ -2,7 +2,8 @@
 
 Local push-to-talk dictation for Windows. Hold **Ctrl+Win**, speak, and the text is typed into whatever field has focus. Runs offline from the system tray.
 
-> Work in progress — see open pull requests for the current state.
+> Work in progress. Dictation works end to end (hotkey → microphone → GPU/CPU recognition → typing);
+> settings UI, history, the cleanup LLM and the installer are still to come.
 
 ## Planned behaviour
 
@@ -22,12 +23,27 @@ dotnet build 2KSpeak.slnx -c Release            # CUDA flavor of ONNX Runtime (d
 dotnet test --project tests/TwoKSpeak.Engine.Tests -c Release
 ```
 
-- `src/TwoKSpeak.Engine` — Parakeet TDT ONNX pipeline (features, encoder, TDT greedy decoding).
+- `src/TwoKSpeak.App` — tray app: Ctrl+Win hook, microphone, phrase segmentation, typing, overlay.
+- `src/TwoKSpeak.Worker` — inference process; exits on idle so GPU memory is returned.
+- `src/TwoKSpeak.Engine` — Parakeet TDT ONNX pipeline, Silero VAD, phrase segmenter, filler filter, IPC protocol.
 - `src/TwoKSpeak.Bench` — latency/VRAM benchmark; results in [docs/spike-results.md](docs/spike-results.md).
-- `tools/fetch-dev-models.sh` — downloads models and the CUDA/llama.cpp runtimes into `%LOCALAPPDATA%KSpeak`.
+- `tools/fetch-dev-models.sh` — downloads models and the CUDA/llama.cpp runtimes into `%LOCALAPPDATA%\2KSpeak`.
   Model tests skip when the models are absent.
 
 Pass `-p:OrtFlavor=Cpu` to build against the CPU-only runtime (used by CI).
+
+End-to-end check without a microphone: start `2KSpeak.exe` with `TWOKSPEAK_TEST_AUDIO` set to a 16 kHz mono WAV
+(the app then "hears" that file instead of the microphone), then run `tools/e2e-dictation.ps1`.
+
+Logs: `%LOCALAPPDATA%\2KSpeak\logs` (`app.log`, `worker.log`) — timings and errors only, never transcript text.
+
+### How dictation works
+1. A low-level keyboard hook detects Ctrl+Win. Both keys are then hidden from Windows, so text can be typed while
+   they are held without triggering Win/Ctrl shortcuts; a third key restores them (Win+Ctrl+→ still works).
+2. Audio is split into phrases by Silero VAD at short pauses. Each phrase goes to the worker together with the
+   preceding 3 s of audio, so capitalisation and punctuation across the pause come out right.
+3. A phrase's trailing punctuation is held back until the next phrase shows whether the pause ended a sentence,
+   so nothing typed ever has to be deleted.
 
 ## License
 

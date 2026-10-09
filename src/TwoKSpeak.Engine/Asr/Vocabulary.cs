@@ -50,6 +50,27 @@ public sealed class Vocabulary
         return new Vocabulary(tokens);
     }
 
+    /// <summary>True for tokens that begin a new word (SentencePiece boundary marker).</summary>
+    public bool IsWordStart(int id) => _tokens[id].StartsWith(WordBoundary);
+
+    /// <summary>True for tokens that are only punctuation, such as "," or "." (with or without a word boundary).</summary>
+    public bool IsPunctuation(int id)
+    {
+        var piece = _tokens[id].AsSpan().Trim(WordBoundary);
+        if (piece.IsEmpty)
+        {
+            return false;
+        }
+        foreach (var c in piece)
+        {
+            if (!char.IsPunctuation(c))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /// <summary>Joins token pieces into text, dropping control tokens such as &lt;unk&gt; or &lt;|nospeech|&gt;.</summary>
     public string Detokenize(IEnumerable<int> ids)
     {

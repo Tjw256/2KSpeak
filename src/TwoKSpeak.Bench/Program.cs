@@ -30,6 +30,8 @@ var precisionArg = Option("--precision", "");
 var precision = precisionArg.Length == 0 ? null : precisionArg;
 var runs = int.Parse(Option("--runs", "5"));
 var decoderArg = Option("--decoder", "");
+var bucket = int.Parse(Option("--bucket", "0"));
+var vary = argList.Remove("--vary");
 ComputeDevice? decoderDevice = decoderArg == "cpu" ? ComputeDevice.Cpu : null;
 var wavs = argList;
 
@@ -43,7 +45,10 @@ if (device == ComputeDevice.Cuda)
 
 var vramBefore = Vram.UsedMiB();
 var sw = Stopwatch.StartNew();
-using var recognizer = new ParakeetRecognizer(ParakeetModelFiles.FromDirectory(modelDir, precision), device, decoderDevice);
+using var recognizer = new ParakeetRecognizer(ParakeetModelFiles.FromDirectory(modelDir, precision), device, decoderDevice)
+{
+    FeatureBucketFrames = bucket,
+};
 var loadMs = sw.Elapsed.TotalMilliseconds;
 var vramLoaded = Vram.UsedMiB();
 
@@ -57,6 +62,34 @@ var vramPeak = Vram.UsedMiB();
 Console.WriteLine($"device={device} decoder={decoderDevice?.ToString() ?? device.ToString()} precision={precision ?? "fp32"} model={Path.GetFileName(modelDir.TrimEnd('\\', '/'))}");
 Console.WriteLine($"session load {loadMs:F0} ms | first transcribe {firstMs:F0} ms | process start -> first text {readyMs:F0} ms");
 Console.WriteLine($"VRAM (this process): before {vramBefore} MiB, after load {vramLoaded} MiB, after first run {vramPeak} MiB");
+
+if (vary)
+{
+    // Every dictated phrase has a new length; measure that rather than repeating one shape.
+    var source = clips[^1].Samples;
+    var timesVary = new List<double>();
+    for (var seconds = 2.0; seconds <= 12.0; seconds += 0.37)
+    {
+        var length = Math.Min(source.Length, (int)(seconds * 16000));
+        sw.Restart();
+        recognizer.Transcribe(source.AsSpan(0, length));
+        timesVary.Add(sw.Elapsed.TotalMilliseconds);
+    }
+    Console.WriteLine($"varying lengths 2-12 s, bucket {bucket}: first pass mean {timesVary.Average():F0} ms, max {timesVary.Max():F0} ms");
+    timesVary.Clear();
+    var stages = new List<TranscriptionTimings>();
+    for (var seconds = 2.0; seconds <= 12.0; seconds += 0.37)
+    {
+        var length = Math.Min(source.Length, (int)(seconds * 16000));
+        sw.Restart();
+        recognizer.Transcribe(source.AsSpan(0, length));
+        timesVary.Add(sw.Elapsed.TotalMilliseconds);
+        stages.Add(recognizer.LastTimings);
+    }
+    Console.WriteLine($"  stages mean: features {stages.Average(t => t.Features.TotalMilliseconds):F0}, encoder {stages.Average(t => t.Encoder.TotalMilliseconds):F0}, decoder {stages.Average(t => t.Decoder.TotalMilliseconds):F0} ms");
+    Console.WriteLine($"varying lengths 2-12 s, bucket {bucket}: second pass mean {timesVary.Average():F0} ms, max {timesVary.Max():F0} ms");
+    return;
+}
 
 foreach (var (path, samples) in clips)
 {

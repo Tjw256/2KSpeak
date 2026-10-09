@@ -26,6 +26,26 @@ Sources: fp32/int8 export [istupakov/parakeet-tdt-0.6b-v3-onnx](https://huggingf
 fp16 conversion [jimmy927/parakeet-tdt-0.6b-v3-onnx-fp16](https://huggingface.co/jimmy927/parakeet-tdt-0.6b-v3-onnx-fp16)
 at revision `6477bf2008b729808e4f502f1b283a2a3d5ca1bb` (weights fp16, inputs/outputs fp32).
 
+## Varying input lengths (found in end-to-end testing)
+
+The table above repeats one clip, so every call has the same input shape. Real phrases all differ in length,
+and the CUDA provider re-plans kernels whenever the shape changes: the encoder took 130–250 ms per phrase
+instead of ~22 ms. Sweeping 28 lengths between 2 and 12 s (encoder mean, GPU otherwise idle unless noted):
+
+| Feature padding | Encoder | Notes |
+|---|---|---|
+| none | 151 ms | |
+| 1 s buckets (100 frames) | 66 ms | |
+| 2 s buckets (200 frames) | 41 ms | chosen; under a concurrent LLM load ~50 ms vs ~145 ms unpadded |
+| 8 s buckets | 33 ms | more wasted compute per call |
+
+The true length is passed with the padded tensor, so padded frames are masked out; a model test checks the
+transcript is identical with and without padding. The arena strategy (`kNextPowerOfTwo` vs `kSameAsRequested`)
+made no difference except +0.9 GB VRAM, so `kSameAsRequested` stays.
+
+With 2 s buckets in the app: warm phrases transcribe in ~75–100 ms end to end inside the worker
+(3 s of context included); the first phrase landing in a new bucket costs ~180 ms once.
+
 ## Curator LLM — deletion-only cleanup
 
 llama.cpp b11534 (CUDA 13.4), context 2048, temperature 0, four few-shot examples, ten test sentences

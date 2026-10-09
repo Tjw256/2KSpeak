@@ -1,0 +1,12 @@
+<Project>
+  <!-- Native ONNX Runtime for executables. App and worker ship in one folder, so they must use the same flavor. -->
+  <ItemGroup Condition="'$(OrtFlavor)' == 'Cuda'">
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu.Windows" Version="$(OrtVersion)" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(OrtFlavor)' == 'DirectML'">
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="$(OrtVersion)" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(OrtFlavor)' == 'Cpu'">
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="$(OrtVersion)" />
+  </ItemGroup>
+</Project>
