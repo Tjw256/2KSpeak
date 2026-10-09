@@ -30,6 +30,13 @@ public sealed record ParakeetModelFiles(string Preprocessor, string Encoder, str
     }
 }
 
+/// <param name="Text">Transcript of the new audio only.</param>
+/// <param name="SeamPunctuation">
+/// Punctuation the model placed between the context and the new audio ("" when none); null when the context
+/// produced no words, so there was nothing to judge the seam from.
+/// </param>
+public readonly record struct ContextualTranscript(string Text, string? SeamPunctuation);
+
 public readonly record struct TranscriptionTimings(TimeSpan Features, TimeSpan Encoder, TimeSpan Decoder);
 
 /// <summary>
@@ -41,6 +48,9 @@ public sealed class ParakeetRecognizer : IDisposable
     private const int EncoderDim = 1024;
     private const int StateDim = 640;
     private const int StateLayers = 2;
+
+    /// <summary>10 ms feature hop times the encoder's 8x subsampling, at 16 kHz.</summary>
+    public const int SamplesPerEncoderFrame = 1280;
 
     private readonly InferenceSession _preprocessor;
     private readonly InferenceSession _encoder;
@@ -72,18 +82,103 @@ public sealed class ParakeetRecognizer : IDisposable
 
     public ComputeDevice Device { get; }
 
+    /// <summary>
+    /// Pads encoder input to a multiple of this many feature frames (0 = off). GPU kernels are planned per input
+    /// shape (~150 ms each time a new length appears), so a few fixed buckets keep every phrase on a planned shape.
+    /// The true length is still passed, so padded frames are masked out of attention.
+    /// </summary>
+    public int FeatureBucketFrames { get; init; }
+
     /// <summary>Stage durations of the most recent <see cref="Transcribe"/> call.</summary>
     public TranscriptionTimings LastTimings { get; private set; }
 
-    public string Transcribe(ReadOnlySpan<float> samples)
+    public string Transcribe(ReadOnlySpan<float> samples) => Transcribe(ReadOnlySpan<float>.Empty, samples).Text;
+
+    /// <summary>
+    /// Transcribes <paramref name="samples"/> with <paramref name="leftContext"/> prepended, so capitalisation and
+    /// punctuation of the new audio are decided knowing what came before. Tokens emitted inside the context are
+    /// dropped from the text; punctuation the model placed at the seam is reported separately.
+    /// </summary>
+    public ContextualTranscript Transcribe(ReadOnlySpan<float> leftContext, ReadOnlySpan<float> samples)
     {
-        if (samples.Length == 0)
+        if (samples.IsEmpty)
         {
-            return string.Empty;
+            return new ContextualTranscript(string.Empty, null);
         }
 
+        var audio = new float[leftContext.Length + samples.Length];
+        leftContext.CopyTo(audio);
+        samples.CopyTo(audio.AsSpan(leftContext.Length));
+        var tokens = Recognize(audio);
+
+        var firstNew = SplitIndex(tokens, leftContext.Length / SamplesPerEncoderFrame);
+
+        // Punctuation at the end of the context or the start of the new audio sits on the seam between them.
+        var seamStart = firstNew;
+        while (seamStart > 0 && _vocabulary.IsPunctuation(tokens[seamStart - 1].Id))
+        {
+            seamStart--;
+        }
+        var textStart = firstNew;
+        while (textStart < tokens.Count && _vocabulary.IsPunctuation(tokens[textStart].Id))
+        {
+            textStart++;
+        }
+
+        var contextHasWords = seamStart > 0;
+        var boundary = contextHasWords
+            ? _vocabulary.Detokenize(tokens[seamStart..textStart].Select(t => t.Id))
+            : null;
+        var text = _vocabulary.Detokenize(tokens[textStart..].Select(t => t.Id));
+        return new ContextualTranscript(text, boundary);
+    }
+
+    /// <summary>
+    /// Index of the first token that belongs to the new audio. The encoder sees the whole input, so a word's
+    /// first piece can be emitted a frame or two before the seam; the split therefore snaps to a word start,
+    /// preferring the one after the largest timing gap (the pause that separated the phrases).
+    /// </summary>
+    private int SplitIndex(List<TimedToken> tokens, int contextFrames)
+    {
+        const int EarlyFrames = 3;
+        const int LateFrames = 2;
+        var best = -1;
+        var bestGap = int.MinValue;
+        for (var i = 0; i < tokens.Count; i++)
+        {
+            var frame = tokens[i].Frame;
+            if (frame < contextFrames - EarlyFrames || frame > contextFrames + LateFrames || !_vocabulary.IsWordStart(tokens[i].Id))
+            {
+                continue;
+            }
+            var gap = i == 0 ? int.MaxValue : frame - tokens[i - 1].Frame;
+            if (gap > bestGap)
+            {
+                best = i;
+                bestGap = gap;
+            }
+        }
+        if (best >= 0)
+        {
+            return best;
+        }
+
+        var split = tokens.FindIndex(t => t.Frame >= contextFrames);
+        if (split < 0)
+        {
+            return tokens.Count;
+        }
+        while (split > 0 && !_vocabulary.IsWordStart(tokens[split].Id) && !_vocabulary.IsPunctuation(tokens[split].Id))
+        {
+            split--;
+        }
+        return split;
+    }
+
+    private List<TimedToken> Recognize(float[] audio)
+    {
         var start = System.Diagnostics.Stopwatch.GetTimestamp();
-        var (features, featureFrames) = ExtractFeatures(samples);
+        var (features, featureFrames) = ExtractFeatures(audio);
         var featuresDone = System.Diagnostics.Stopwatch.GetTimestamp();
         var (encoded, encodedFrames) = Encode(features, featureFrames);
         var encodeDone = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -92,12 +187,12 @@ public sealed class ParakeetRecognizer : IDisposable
             System.Diagnostics.Stopwatch.GetElapsedTime(start, featuresDone),
             System.Diagnostics.Stopwatch.GetElapsedTime(featuresDone, encodeDone),
             System.Diagnostics.Stopwatch.GetElapsedTime(encodeDone));
-        return _vocabulary.Detokenize(tokens);
+        return tokens;
     }
 
-    private (float[] Features, long Frames) ExtractFeatures(ReadOnlySpan<float> samples)
+    private (float[] Features, long Frames) ExtractFeatures(float[] samples)
     {
-        using var waveform = OrtValue.CreateTensorValueFromMemory(samples.ToArray(), [1, samples.Length]);
+        using var waveform = OrtValue.CreateTensorValueFromMemory(samples, [1, samples.Length]);
         using var lengths = OrtValue.CreateTensorValueFromMemory(new long[] { samples.Length }, [1]);
         using var outputs = _preprocessor.Run(
             _runOptions,
@@ -110,6 +205,17 @@ public sealed class ParakeetRecognizer : IDisposable
     private (float[] Encoded, int Frames) Encode(float[] features, long featureFrames)
     {
         var totalFrames = features.Length / 128;
+        if (FeatureBucketFrames > 0 && totalFrames % FeatureBucketFrames != 0)
+        {
+            var padded = (totalFrames / FeatureBucketFrames + 1) * FeatureBucketFrames;
+            var bucketed = new float[128 * padded];
+            for (var bin = 0; bin < 128; bin++)
+            {
+                Array.Copy(features, bin * totalFrames, bucketed, bin * padded, totalFrames);
+            }
+            features = bucketed;
+            totalFrames = padded;
+        }
         using var signal = OrtValue.CreateTensorValueFromMemory(features, [1, 128, totalFrames]);
         using var length = OrtValue.CreateTensorValueFromMemory(new[] { featureFrames }, [1]);
         using var outputs = _encoder.Run(
@@ -119,7 +225,7 @@ public sealed class ParakeetRecognizer : IDisposable
         return (outputs[0].GetTensorDataAsSpan<float>().ToArray(), (int)outputs[1].GetTensorDataAsSpan<long>()[0]);
     }
 
-    private List<int> DecodeTokens(float[] encoded, int validFrames)
+    private List<TimedToken> DecodeTokens(float[] encoded, int validFrames)
     {
         var stride = encoded.Length / EncoderDim;
         var frame = new float[EncoderDim];

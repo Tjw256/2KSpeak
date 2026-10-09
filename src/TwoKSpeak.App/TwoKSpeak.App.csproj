@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>TwoKSpeak.App</RootNamespace>
+    <AssemblyName>2KSpeak</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="H.NotifyIcon.Wpf" Version="2.4.1" />
+    <PackageReference Include="NAudio.WinMM" Version="3.1.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\TwoKSpeak.Engine\TwoKSpeak.Engine.csproj" />
+    <!-- Built alongside so 2KSpeak.Worker.exe lands next to 2KSpeak.exe; nothing is referenced from it. -->
+    <ProjectReference Include="..\TwoKSpeak.Worker\TwoKSpeak.Worker.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="System.IO" />
+    <InternalsVisibleTo Include="TwoKSpeak.App.Tests" />
+  </ItemGroup>
+  <Import Project="..\..\build\OnnxRuntime.Native.props" />
+  <!-- Copy the whole worker output (exe, dll, runtimeconfig) into the app folder. -->
+  <Target Name="CopyWorker" AfterTargets="Build">
+    <ItemGroup>
+      <WorkerFiles Include="$(MSBuildThisFileDirectory)..\TwoKSpeak.Worker\bin\$(Configuration)\net10.0\2KSpeak.Worker.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(WorkerFiles)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

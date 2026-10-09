@@ -1,9 +1,12 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/TwoKSpeak.App/TwoKSpeak.App.csproj" />
     <Project Path="src/TwoKSpeak.Bench/TwoKSpeak.Bench.csproj" />
     <Project Path="src/TwoKSpeak.Engine/TwoKSpeak.Engine.csproj" />
+    <Project Path="src/TwoKSpeak.Worker/TwoKSpeak.Worker.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/TwoKSpeak.App.Tests/TwoKSpeak.App.Tests.csproj" />
     <Project Path="tests/TwoKSpeak.Engine.Tests/TwoKSpeak.Engine.Tests.csproj" />
   </Folder>
 </Solution>

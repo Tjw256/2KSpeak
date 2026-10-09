@@ -23,3 +23,4 @@ jobs:
       # CPU flavor of ONNX Runtime: hosted runners have no GPU. Model tests skip without downloaded models.
       - run: dotnet build 2KSpeak.slnx -c Release -p:OrtFlavor=Cpu
       - run: dotnet test --project tests/TwoKSpeak.Engine.Tests -c Release -p:OrtFlavor=Cpu --no-build
+      - run: dotnet test --project tests/TwoKSpeak.App.Tests -c Release -p:OrtFlavor=Cpu --no-build

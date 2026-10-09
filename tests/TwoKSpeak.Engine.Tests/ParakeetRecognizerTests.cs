@@ -44,6 +44,21 @@ public class ParakeetRecognizerTests
         Assert.Contains("večer", text);
     }
 
+    [Theory]
+    [InlineData("en-short.wav")]
+    [InlineData("cs-short.wav")]
+    public void PaddingToBucketsDoesNotChangeTheTranscript(string fixture)
+    {
+        using var plain = CreateOrSkip();
+        using var bucketed = new ParakeetRecognizer(ParakeetModelFiles.FromDirectory(ModelDir, "int8"), ComputeDevice.Cpu)
+        {
+            FeatureBucketFrames = 200,
+        };
+        var audio = Fixture(fixture);
+
+        Assert.Equal(plain.Transcribe(audio), bucketed.Transcribe(audio));
+    }
+
     [Fact]
     public void EmptyInputReturnsEmptyText()
     {

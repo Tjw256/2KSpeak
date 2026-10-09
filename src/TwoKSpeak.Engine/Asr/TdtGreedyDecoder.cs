@@ -5,6 +5,9 @@ namespace TwoKSpeak.Engine.Asr;
 /// <param name="NextState">Opaque decoder state to use if the emitted token is kept.</param>
 public readonly record struct JointResult(float[] Logits, object NextState);
 
+/// <summary>A decoded token and the encoder frame at which it was emitted.</summary>
+public readonly record struct TimedToken(int Id, int Frame);
+
 /// <summary>
 /// Greedy Token-and-Duration Transducer decoding. Each joint step predicts a token and how many
 /// encoder frames to skip; blanks never update the prediction-network state.
@@ -19,14 +22,14 @@ public static class TdtGreedyDecoder
     /// <param name="blankId">Index of the blank token.</param>
     /// <param name="initialState">Prediction-network state before any token.</param>
     /// <param name="joint">Evaluates the joint for (frame, previous token, state).</param>
-    public static List<int> Decode(
+    public static List<TimedToken> Decode(
         int frameCount,
         int vocabSize,
         int blankId,
         object initialState,
         Func<int, int, object, JointResult> joint)
     {
-        var tokens = new List<int>();
+        var tokens = new List<TimedToken>();
         var state = initialState;
         var previous = blankId;
         var frame = 0;
@@ -42,7 +45,7 @@ public static class TdtGreedyDecoder
             {
                 state = result.NextState;
                 previous = token;
-                tokens.Add(token);
+                tokens.Add(new TimedToken(token, frame));
                 emittedAtFrame++;
             }
 

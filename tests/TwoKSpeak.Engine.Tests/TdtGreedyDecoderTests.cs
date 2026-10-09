@@ -33,7 +33,7 @@ public class TdtGreedyDecoderTests
             return new JointResult(script[frame], state);
         });
 
-        Assert.Equal([1, 2], tokens);
+        Assert.Equal([new TimedToken(1, 0), new TimedToken(2, 2)], tokens);
         Assert.Equal([0, 2, 3], visited);
     }
 
