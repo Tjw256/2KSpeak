@@ -13,6 +13,22 @@ Local push-to-talk dictation for Windows. Hold **Ctrl+Win**, speak, and the text
 - **Filler cleanup.** A word filter, optionally followed by a small local LLM that may only delete words (fillers, self-corrections) — never add or change them.
 - **Tray history.** The last five transcripts; click one to copy it.
 
+## Development
+
+Requires the .NET 10 SDK on Windows.
+
+```sh
+dotnet build 2KSpeak.slnx -c Release            # CUDA flavor of ONNX Runtime (default)
+dotnet test --project tests/TwoKSpeak.Engine.Tests -c Release
+```
+
+- `src/TwoKSpeak.Engine` — Parakeet TDT ONNX pipeline (features, encoder, TDT greedy decoding).
+- `src/TwoKSpeak.Bench` — latency/VRAM benchmark; results in [docs/spike-results.md](docs/spike-results.md).
+- `tools/fetch-dev-models.sh` — downloads models and the CUDA/llama.cpp runtimes into `%LOCALAPPDATA%KSpeak`.
+  Model tests skip when the models are absent.
+
+Pass `-p:OrtFlavor=Cpu` to build against the CPU-only runtime (used by CI).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

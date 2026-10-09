@@ -6,3 +6,4 @@
 *.xaml text eol=crlf
 *.ico binary
 *.png binary
+*.wav binary

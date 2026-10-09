@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="4.0.2" />
+    <!-- CPU runtime only: model tests run the int8 export on CPU so they work on CI machines without a GPU. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="$(OrtVersion)" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\TwoKSpeak.Engine\TwoKSpeak.Engine.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\fixtures\**" LinkBase="fixtures" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
