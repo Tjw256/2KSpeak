@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TwoKSpeak.Bench/TwoKSpeak.Bench.csproj" />
+    <Project Path="src/TwoKSpeak.Engine/TwoKSpeak.Engine.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TwoKSpeak.Engine.Tests/TwoKSpeak.Engine.Tests.csproj" />
+  </Folder>
+</Solution>

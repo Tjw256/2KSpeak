@@ -1,0 +1,16 @@
+<Project>
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <!--
+      Native ONNX Runtime flavor. The managed API must match the native package version,
+      so the flavor also pins OrtVersion. Cuda includes the CPU provider; Cpu is for CI and tests.
+    -->
+    <OrtFlavor Condition="'$(OrtFlavor)' == ''">Cuda</OrtFlavor>
+    <OrtVersion Condition="'$(OrtFlavor)' != 'DirectML'">1.31.0</OrtVersion>
+    <OrtVersion Condition="'$(OrtFlavor)' == 'DirectML'">1.24.4</OrtVersion>
+  </PropertyGroup>
+</Project>

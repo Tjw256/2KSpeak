@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      # CPU flavor of ONNX Runtime: hosted runners have no GPU. Model tests skip without downloaded models.
+      - run: dotnet build 2KSpeak.slnx -c Release -p:OrtFlavor=Cpu
+      - run: dotnet test --project tests/TwoKSpeak.Engine.Tests -c Release -p:OrtFlavor=Cpu --no-build
