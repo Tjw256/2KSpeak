@@ -6,6 +6,7 @@ using System.Windows.Shapes;
 using TwoKSpeak.App.Input;
 using TwoKSpeak.App.Settings;
 using TwoKSpeak.App.Setup;
+using TwoKSpeak.Engine.Onnx;
 using TwoKSpeak.Engine.Setup;
 
 namespace TwoKSpeak.App.Ui;
@@ -137,6 +138,7 @@ public partial class SetupWindow : Window
         ComponentId.Speech => "Turns your voice into text. Needed to dictate.",
         ComponentId.Cleanup => "Removes “um”s and words you corrected yourself.",
         ComponentId.CleanupSmall => "A lighter cleanup model for slower computers.",
+        _ when Gpu.Detected?.MeasureFirst == true => "Tests whether your graphics chip is faster than the processor, and uses it if so.",
         _ => "Makes dictation faster on your graphics card.",
     };
 

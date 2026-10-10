@@ -9,9 +9,9 @@ it. The installer isn't code-signed yet, so Windows SmartScreen may say "Windows
 **More info**, then **Run anyway**.
 
 On first start 2KSpeak downloads what it needs from the original publishers, each file checked against a pinned
-SHA-256: speech recognition first (0.7 GB, enough to dictate), then text cleanup (1.4 GB), then GPU mode (3.2 GB,
-NVIDIA cards with 6 GB or more only: CUDA, cuDNN and the fp16 model). Nothing has to be installed beforehand, not
-even CUDA. A setup window explains each part; it can be closed, and downloads resume after a lost connection or a
+SHA-256: speech recognition first (0.7 GB, enough to dictate), then text cleanup (1.4 GB), then GPU mode on a
+supported graphics card (see below; 3.2 GB on NVIDIA with CUDA and cuDNN, 1.3 GB on AMD and Intel). Nothing has to be
+installed beforehand, not even CUDA. A setup window explains each part; it can be closed, and downloads resume after a lost connection or a
 restart. Until GPU mode arrives, dictation runs on the CPU.
 
 Updates download silently from GitHub releases and apply the next time 2KSpeak starts, or right away from
@@ -20,15 +20,20 @@ settings and history.
 
 ## GPU support
 
-Dictation works on any PC; a supported graphics card makes it faster and keeps the CPU free.
+Dictation works on any PC; a supported graphics card makes it faster and keeps the CPU free. 2KSpeak picks the card
+itself on first start.
 
 | Graphics card | Status |
 | --- | --- |
-| NVIDIA with 6 GB or more | **Supported by the installer.** GPU mode (CUDA) downloads on first run. |
-| AMD Radeon RX 9070 XT | **Works in a separate DirectML build** (speech on DirectML, cleanup on Vulkan), tested on that card only; contributed by [@PepiBikerBTW](https://github.com/PepiBikerBTW). Not in the installer yet: build it yourself, see [docs/amd-support.md](docs/amd-support.md). The installer runs on the CPU on AMD. |
-| AMD Radeon RX 7000, RX 6000 series and older | **Not supported yet.** Support for these cards still has to be done; they run on the CPU. |
-| Intel Arc | Untested. |
-| Anything else, or no graphics card | Runs on the CPU: text appears about 1–2 s after you let go instead of almost at once. |
+| NVIDIA with 6 GB or more | **Supported.** Speech and cleanup on CUDA. |
+| AMD Radeon with 6 GB or more (RX 9070 XT, RX 7000, RX 6000 series) | **Supported.** Speech on DirectML, cleanup on Vulkan. Tested on the RX 9070 XT; other Radeon cards use the same path but haven't been tested. AMD support was started by [@PepiBikerBTW](https://github.com/PepiBikerBTW). |
+| AMD Ryzen with Radeon graphics (laptops, handhelds, desktop APUs) | **Supported, decided by a speed test.** After GPU mode downloads, 2KSpeak times the graphics chip against the processor once and uses whichever is faster. Strong chips (Radeon 680M, 780M, 880M, 890M) should win; the small 2-core graphics in desktop Ryzen 7000 and 9000 CPUs lose (tested on a Ryzen 7 7700: 923 ms vs 299 ms on the processor) and stay on the CPU. Needs 16 GB of RAM. |
+| Intel Arc with 6 GB or more | Same DirectML path as AMD; untested. |
+| Intel integrated graphics, NVIDIA under 6 GB, no graphics card | Runs on the CPU: text appears about 1–2 s after you let go instead of almost at once. |
+
+If a graphics card fails to load or run the models, 2KSpeak falls back to the CPU. On a PC with several graphics
+cards, `TWOKSPEAK_GPU=<number>` picks one by its DirectX adapter number (details in
+[docs/amd-support.md](docs/amd-support.md)).
 
 ## Behaviour
 
@@ -51,7 +56,7 @@ Dictation works on any PC; a supported graphics card makes it faster and keeps t
 - **Cleanup.** Hesitation sounds are removed by a word filter; then a small local LLM (Qwen3.5 2B by default, or
   0.8B) deletes fillers and self-corrections ("at five, no, actually at six" → "at six"). It may only delete words:
   any answer that adds, rewords or translates is discarded and the recognised text is typed instead, as it is when
-  the model is slow or missing. It runs on the GPU when the card can hold it (NVIDIA, 6 GB+), otherwise on the CPU
+  the model is slow or missing. It runs on the GPU when the card can hold it (see GPU support), otherwise on the CPU
   (about 1 s per dictation).
 
 ## Development
@@ -75,16 +80,19 @@ dotnet test --project tests/TwoKSpeak.App.Tests -c Release
   Model tests skip when the models are absent. A development build also downloads them itself on first start.
 - `TWOKSPEAK_DATA_DIR` — points models, logs, settings and history at another folder, e.g. to test a first run.
 
-Pass `-p:OrtFlavor=Cpu` to build against the CPU-only runtime (used by CI).
+Pass `-p:OrtFlavor=Cpu` to build against the CPU-only runtime (used by CI). `-p:OrtFlavor=DirectML` builds the AMD/Intel
+worker into separate `bin\dml` and `obj\dml` folders; to try it from a development build, publish it into the app's
+`dml` folder (see [docs/amd-support.md](docs/amd-support.md)).
 
 End-to-end check without a microphone: start `2KSpeak.exe` with `TWOKSPEAK_TEST_AUDIO` set to a 16 kHz mono WAV
-(the app then "hears" that file instead of the microphone), then run `tools/e2e-dictation.ps1`.
+(the app then "hears" that file instead of the microphone), then run `tools/e2e-dictation.ps1`. Quit it afterwards:
+while it runs it also answers the real shortcut, and types the WAV's text instead of what you say.
 
 Releases: pushing a `v*` tag runs `.github/workflows/release.yml`, which publishes the app and worker self-contained,
 packs them with Velopack (`vpk`, with the Visual C++ runtime as a prerequisite) and publishes the GitHub release
-that installed copies update from. Release notes come from `docs/release-notes.md`. The app installs to
-`%LOCALAPPDATA%\2KSpeak.App`; downloads stay in `%LOCALAPPDATA%\2KSpeak`, because Setup wipes its own folder on a
-repair.
+that installed copies update from. The DirectML worker goes into `publish\dml`, next to the CUDA one. Release notes
+come from `docs/release-notes.md`. The app installs to `%LOCALAPPDATA%\2KSpeak.App`; downloads stay in
+`%LOCALAPPDATA%\2KSpeak`, because Setup wipes its own folder on a repair.
 
 Logs: `%LOCALAPPDATA%\2KSpeak\logs` (`app.log`, `worker.log`) — timings and errors only, never transcript text.
 

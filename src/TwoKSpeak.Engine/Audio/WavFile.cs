@@ -5,7 +5,14 @@ public static class WavFile
 {
     public static float[] ReadMono16(string path, out int sampleRate)
     {
-        using var reader = new BinaryReader(File.OpenRead(path));
+        using var stream = File.OpenRead(path);
+        return ReadMono16(stream, path, out sampleRate);
+    }
+
+    /// <param name="path">Names the source in error messages.</param>
+    public static float[] ReadMono16(Stream stream, string path, out int sampleRate)
+    {
+        using var reader = new BinaryReader(stream);
         if (new string(reader.ReadChars(4)) != "RIFF")
         {
             throw new InvalidDataException($"'{path}' is not a RIFF file.");

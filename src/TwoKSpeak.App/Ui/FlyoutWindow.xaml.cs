@@ -10,6 +10,7 @@ using TwoKSpeak.App.Inference;
 using TwoKSpeak.App.Input;
 using TwoKSpeak.App.Settings;
 using TwoKSpeak.App.Setup;
+using TwoKSpeak.Engine.Onnx;
 using TwoKSpeak.Engine.Setup;
 using static TwoKSpeak.App.Input.NativeMethods;
 
@@ -206,7 +207,7 @@ public partial class FlyoutWindow : Window
         {
             pids.Add(curator);
         }
-        _vramBytes = pids.Count == 0 ? null : await Task.Run(() => pids.Sum(pid => VramMeter.DedicatedBytes(pid) ?? 0));
+        _vramBytes = pids.Count == 0 ? null : await Task.Run(() => pids.Sum(pid => VramMeter.Bytes(pid, includeShared: Gpu.Detected?.MeasureFirst == true) ?? 0));
         RefreshStatus();
     }
 

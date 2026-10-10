@@ -6,6 +6,10 @@
     <AssemblyName>2KSpeak.Worker</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Windows TTS phrase for the integrated-GPU speed test (the benchmark option). -->
+    <EmbeddedResource Include="..\..\tests\fixtures\en-short.wav" LogicalName="benchmark.wav" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\TwoKSpeak.Engine\TwoKSpeak.Engine.csproj" />
   </ItemGroup>
   <Import Project="..\..\build\OnnxRuntime.Native.props" />

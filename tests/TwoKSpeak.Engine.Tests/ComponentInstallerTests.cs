@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
+using TwoKSpeak.Engine.Onnx;
 using TwoKSpeak.Engine.Setup;
 
 namespace TwoKSpeak.Engine.Tests;
@@ -131,7 +132,11 @@ public sealed class ComponentInstallerTests : IDisposable
     [Fact]
     public void ManifestEntriesArePinnedAndConsistent()
     {
-        var all = new[] { Components.Speech, Components.Cleanup(true), Components.Cleanup(false), Components.CleanupSmall, Components.GpuMode };
+        var all = new[]
+        {
+            Components.Speech, Components.Cleanup(GpuBackend.Cuda), Components.Cleanup(GpuBackend.DirectML), Components.Cleanup(null),
+            Components.CleanupSmall, Components.GpuMode(GpuBackend.Cuda), Components.GpuMode(GpuBackend.DirectML),
+        };
         foreach (var (_, file) in all.SelectMany(c => c.Files))
         {
             Assert.Matches("^[0-9a-f]{64}$", file.Sha256);

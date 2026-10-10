@@ -1,5 +1,6 @@
 using System.Text.Json;
 using TwoKSpeak.Engine.Curator;
+using TwoKSpeak.Engine.Onnx;
 
 namespace TwoKSpeak.Engine.Tests;
 
@@ -97,7 +98,7 @@ public class CuratorModelTests
         await Gate.WaitAsync();
         try
         {
-            return _server ??= await LlamaServer.StartAsync(AppPaths.LlamaRuntime, model, gpu: true, CancellationToken.None);
+            return _server ??= await LlamaServer.StartAsync(AppPaths.LlamaRuntime, model, Gpu.Detected, CancellationToken.None);
         }
         finally
         {

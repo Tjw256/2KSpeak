@@ -10,7 +10,7 @@ namespace TwoKSpeak.App.Inference;
 
 /// <summary>
 /// Owns the inference worker process: starts it on demand, sends requests one at a time, and in GPU mode
-/// shuts it down after an idle period so all VRAM (weights and CUDA's own overhead) is returned.
+/// shuts it down after an idle period so all VRAM (weights and the GPU runtime's own overhead) is returned.
 /// A crashed worker is restarted on the next request. If the GPU can't load or run the model (typically
 /// because another program filled the VRAM), the worker continues on the CPU until it next unloads, and the
 /// GPU is tried again on the following start. Until GPU mode is downloaded, GPU requests run on the CPU.
@@ -127,7 +127,7 @@ public sealed class WorkerClient : IAsyncDisposable
         var response = await ExchangeAsync(request, ct);
         if (response is ErrorResponse gpuError && ActiveDevice == RecognitionDevice.Gpu)
         {
-            // Most likely CUDA ran out of memory mid-session; finish the dictation on the CPU instead of losing it.
+            // Most likely the GPU ran out of memory mid-session; finish the dictation on the CPU instead of losing it.
             Log.Write($"GPU transcription failed, continuing on CPU: {gpuError.Message}");
             await StartAsync(_requested, gpuFailed: true);
             response = await ExchangeAsync(request, ct);
@@ -212,8 +212,7 @@ public sealed class WorkerClient : IAsyncDisposable
     {
         var watch = Stopwatch.StartNew();
         var pipeName = $"2KSpeak-worker-{Environment.ProcessId}-{Guid.NewGuid():N}";
-        var exe = Path.Combine(AppContext.BaseDirectory, "2KSpeak.Worker.exe");
-        var start = new ProcessStartInfo(exe)
+        var start = new ProcessStartInfo(ExePath(Gpu.Detected, device))
         {
             CreateNoWindow = true,
             UseShellExecute = false,
@@ -221,7 +220,7 @@ public sealed class WorkerClient : IAsyncDisposable
             {
                 "--pipe", pipeName,
                 "--parent", Environment.ProcessId.ToString(),
-                "--device", device == RecognitionDevice.Gpu ? GpuBackend.WorkerDevice : "cpu",
+                "--device", DeviceArgument(Gpu.Detected, device),
             },
         };
 
@@ -241,6 +240,22 @@ public sealed class WorkerClient : IAsyncDisposable
         ActiveDevice = device;
         Log.Write($"worker ready ({device}) in {watch.ElapsedMilliseconds} ms");
     }
+
+    /// <summary>
+    /// The DirectML worker lives in "dml": its ONNX Runtime build can't share a folder with the CUDA one. A build
+    /// without it (development) uses the main worker, which falls back to the CPU if it lacks DirectML.
+    /// </summary>
+    internal static string ExePath(GpuChoice? gpu, RecognitionDevice device)
+    {
+        var dml = Path.Combine(AppContext.BaseDirectory, "dml", "2KSpeak.Worker.exe");
+        return device == RecognitionDevice.Gpu && gpu?.Backend == GpuBackend.DirectML && File.Exists(dml)
+            ? dml
+            : Path.Combine(AppContext.BaseDirectory, "2KSpeak.Worker.exe");
+    }
+
+    /// <summary>GPU chosen by hand without a usable GPU tries CUDA, and falls back to the CPU if that fails.</summary>
+    internal static string DeviceArgument(GpuChoice? gpu, RecognitionDevice device) =>
+        device == RecognitionDevice.Gpu ? gpu?.WorkerDevice ?? "cuda" : "cpu";
 
     private void ScheduleIdleUnload()
     {
