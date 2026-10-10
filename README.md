@@ -25,7 +25,7 @@ Dictation works on any PC; a supported graphics card makes it faster and keeps t
 | Graphics card | Status |
 | --- | --- |
 | NVIDIA with 6 GB or more | **Supported by the installer.** GPU mode (CUDA) downloads on first run. |
-| AMD Radeon RX 9070 XT | **Works in a separate DirectML build** (speech on DirectML, cleanup on Vulkan), tested on that card only. Not in the installer yet: build it yourself, see [docs/amd-support.md](docs/amd-support.md). The installer runs on the CPU on AMD. |
+| AMD Radeon RX 9070 XT | **Works in a separate DirectML build** (speech on DirectML, cleanup on Vulkan), tested on that card only; contributed by [@PepiBikerBTW](https://github.com/PepiBikerBTW). Not in the installer yet: build it yourself, see [docs/amd-support.md](docs/amd-support.md). The installer runs on the CPU on AMD. |
 | AMD Radeon RX 7000, RX 6000 series and older | **Not supported yet.** Support for these cards still has to be done; they run on the CPU. |
 | Intel Arc | Untested. |
 | Anything else, or no graphics card | Runs on the CPU: text appears about 1–2 s after you let go instead of almost at once. |

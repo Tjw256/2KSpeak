@@ -14,7 +14,7 @@ No CUDA or other installs are needed; 2KSpeak downloads its own copy. Updates do
 Dictation works on every PC. A supported graphics card makes it faster: text appears almost as soon as you let go, instead of after about 1–2 seconds on the CPU.
 
 - **NVIDIA with 6 GB or more:** supported. GPU mode downloads automatically on first run.
-- **AMD Radeon RX 9070 XT:** works in a separate DirectML build that isn't part of this installer yet (see `docs/amd-support.md` in the repository). This installer runs on the CPU on AMD cards.
+- **AMD Radeon RX 9070 XT:** works in a separate DirectML build that isn't part of this installer yet (see `docs/amd-support.md` in the repository). AMD support was contributed by [@PepiBikerBTW](https://github.com/PepiBikerBTW). This installer runs on the CPU on AMD cards.
 - **AMD Radeon RX 7000, RX 6000 series and older:** not supported yet; support still has to be done. They run on the CPU.
 - **Intel Arc:** untested; runs on the CPU.
 - **NVIDIA with less than 6 GB, or no graphics card:** runs on the CPU by default.
