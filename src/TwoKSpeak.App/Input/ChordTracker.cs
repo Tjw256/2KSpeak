@@ -13,40 +13,65 @@ public enum ChordSignal
     Cancel,
 }
 
+/// <summary>Result of recording a new hotkey: the modifiers held at the peak, or null when Esc cancelled.</summary>
+public sealed record CaptureOutcome(Modifiers? Chord);
+
 /// <param name="Swallow">Hide this event from the rest of the system.</param>
 /// <param name="Inject">Synthetic key events to send, in order.</param>
-public sealed record HookDecision(bool Swallow, IReadOnlyList<KeyStroke> Inject, ChordSignal Signal)
+/// <param name="Capture">Set when a hotkey recording finished with this event.</param>
+public sealed record HookDecision(bool Swallow, IReadOnlyList<KeyStroke> Inject, ChordSignal Signal, CaptureOutcome? Capture = null)
 {
     public static readonly HookDecision PassThrough = new(false, [], ChordSignal.None);
+    public static readonly HookDecision Hide = new(true, [], ChordSignal.None);
 }
 
 /// <summary>
-/// Push-to-talk chord (Ctrl+Win) for a low-level keyboard hook. Pure state machine: feed it physical key
-/// events, apply the returned decision.
+/// Push-to-talk chord (default Ctrl+Win) for a low-level keyboard hook. Pure state machine: feed it physical
+/// key events, apply the returned decision.
 /// While the chord is held its keys are hidden from Windows, which then believes no modifier is down. That is
 /// what makes it safe to type the transcript while the user is still holding the keys — otherwise every
-/// typed letter would become a Win+Ctrl shortcut. If another key joins, the hidden keys are re-pressed
-/// first so shortcuts like Win+Ctrl+→ still work.
+/// typed letter would become a shortcut. If another key joins, the hidden keys are re-pressed first so
+/// shortcuts like Win+Ctrl+→ still work.
 /// </summary>
 public sealed class ChordTracker
 {
-    public const ushort LCtrl = 0xA2;
-    public const ushort RCtrl = 0xA3;
-    public const ushort LWin = 0x5B;
-    public const ushort RWin = 0x5C;
-    /// <summary>Unassigned key sent before a Win release so Windows does not open the Start menu.</summary>
+    /// <summary>Unassigned key sent before a Win or Alt release so Windows opens neither Start nor a menu bar.</summary>
     public const ushort MenuMask = 0xE8;
+    private const ushort Escape = 0x1B;
 
     private readonly HashSet<ushort> _chordKeysDown = [];
     private readonly HashSet<ushort> _otherKeysDown = [];
     private readonly HashSet<ushort> _hidden = [];
     private bool _recording;
 
+    private bool _capturing;
+    private readonly HashSet<ushort> _captureDown = [];
+    private Modifiers _capturePeak;
+    private bool _captureOtherKey;
+
+    public ChordTracker(Modifiers chord)
+    {
+        Chord = chord;
+    }
+
+    /// <summary>The chord to listen for. Change it only while nothing is held (from the settings UI).</summary>
+    public Modifiers Chord { get; set; }
+
     public bool IsRecording => _recording;
 
-    private static bool IsCtrl(ushort vk) => vk is LCtrl or RCtrl;
-    private static bool IsWin(ushort vk) => vk is LWin or RWin;
-    private static bool IsChordKey(ushort vk) => IsCtrl(vk) || IsWin(vk);
+    /// <summary>
+    /// Starts recording a new hotkey: every key is hidden from Windows until all are released (so the
+    /// candidate chord triggers nothing), and the modifiers held at the peak are reported. Esc cancels.
+    /// </summary>
+    public void BeginCapture()
+    {
+        _capturing = true;
+        _captureDown.Clear();
+        _capturePeak = Modifiers.None;
+        _captureOtherKey = false;
+    }
+
+    private bool IsChordKey(ushort vk) => (Chord & Hotkey.GroupOf(vk)) != 0;
 
     /// <param name="ownInjection">The event was sent by 2KSpeak itself (replayed keys, typed text).</param>
     public HookDecision Process(ushort vk, bool down, bool ownInjection)
@@ -55,6 +80,10 @@ public sealed class ChordTracker
         {
             // Input from other tools (on-screen keyboard, automation) is treated like a physical key.
             return HookDecision.PassThrough;
+        }
+        if (_capturing)
+        {
+            return CaptureKey(vk, down);
         }
         if (IsChordKey(vk))
         {
@@ -67,30 +96,30 @@ public sealed class ChordTracker
     {
         if (_hidden.Contains(vk))
         {
-            return new HookDecision(true, [], ChordSignal.None); // auto-repeat of a hidden key
+            return HookDecision.Hide; // auto-repeat of a hidden key
         }
         if (!_chordKeysDown.Add(vk))
         {
             return HookDecision.PassThrough; // auto-repeat of a visible key
         }
 
-        var complete = _chordKeysDown.Any(IsCtrl) && _chordKeysDown.Any(IsWin);
-        if (!complete || _recording || _hidden.Count > 0 || _otherKeysDown.Count > 0)
+        var held = _chordKeysDown.Aggregate(Modifiers.None, (all, k) => all | Hotkey.GroupOf(k));
+        if (held != Chord || _recording || _hidden.Count > 0 || _otherKeysDown.Count > 0)
         {
             return HookDecision.PassThrough;
         }
 
-        // Windows already saw the first chord key go down; release it there. This key is never shown.
+        // Windows already saw the earlier chord keys go down; release them there. This key is never shown.
         var inject = new List<KeyStroke>();
-        foreach (var held in _chordKeysDown.Where(k => k != vk))
+        foreach (var earlier in _chordKeysDown.Where(k => k != vk))
         {
-            if (IsWin(held))
+            if (Hotkey.GroupOf(earlier) is Modifiers.Win or Modifiers.Alt)
             {
                 inject.Add(new KeyStroke(MenuMask, true));
                 inject.Add(new KeyStroke(MenuMask, false));
             }
-            inject.Add(new KeyStroke(held, false));
-            _hidden.Add(held);
+            inject.Add(new KeyStroke(earlier, false));
+            _hidden.Add(earlier);
         }
         _hidden.Add(vk);
         _recording = true;
@@ -109,7 +138,7 @@ public sealed class ChordTracker
             _recording = false;
             return new HookDecision(true, [], ChordSignal.Stop);
         }
-        return new HookDecision(true, [], ChordSignal.None);
+        return HookDecision.Hide;
     }
 
     private HookDecision OtherKeyDown(ushort vk)
@@ -133,5 +162,32 @@ public sealed class ChordTracker
     {
         _otherKeysDown.Remove(vk);
         return HookDecision.PassThrough;
+    }
+
+    private HookDecision CaptureKey(ushort vk, bool down)
+    {
+        if (down && vk == Escape)
+        {
+            _capturing = false;
+            return HookDecision.Hide with { Capture = new CaptureOutcome(null) };
+        }
+
+        if (down)
+        {
+            _captureDown.Add(vk);
+            _capturePeak |= Hotkey.GroupOf(vk);
+            _captureOtherKey |= Hotkey.GroupOf(vk) == Modifiers.None;
+            return HookDecision.Hide;
+        }
+
+        _captureDown.Remove(vk);
+        if (_captureDown.Count > 0)
+        {
+            return HookDecision.Hide;
+        }
+        // Any full press-and-release ends the recording, so a stray letter can't keep the keyboard swallowed.
+        // A combination with a letter in it is reported as no modifiers, which the caller rejects.
+        _capturing = false;
+        return HookDecision.Hide with { Capture = new CaptureOutcome(_captureOtherKey ? Modifiers.None : _capturePeak) };
     }
 }

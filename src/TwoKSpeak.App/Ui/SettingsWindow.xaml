@@ -1,0 +1,97 @@
+<Window x:Class="TwoKSpeak.App.Ui.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="2KSpeak Settings"
+        Style="{StaticResource AppWindow}"
+        Width="480"
+        SizeToContent="Height"
+        ResizeMode="CanMinimize"
+        WindowStartupLocation="CenterScreen">
+    <StackPanel Margin="20,0,20,20">
+        <TextBlock Style="{StaticResource SectionLabel}" Text="Dictation" />
+        <Border Style="{StaticResource Card}">
+            <StackPanel>
+                <DockPanel Style="{StaticResource Row}">
+                    <Button x:Name="HotkeyButton" DockPanel.Dock="Right" Style="{StaticResource PlainButton}" MinWidth="120"
+                            VerticalAlignment="Center" AutomationProperties.Name="Shortcut" />
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Shortcut" />
+                        <TextBlock x:Name="HotkeyHint" Style="{StaticResource Hint}" Margin="0,2,12,0" Visibility="Collapsed" />
+                    </StackPanel>
+                </DockPanel>
+                <Rectangle Style="{StaticResource Divider}" />
+                <DockPanel Style="{StaticResource Row}">
+                    <ComboBox x:Name="PauseBox" DockPanel.Dock="Right" AutomationProperties.Name="Pause before typing" />
+                    <TextBlock VerticalAlignment="Center" Text="Pause before typing" />
+                </DockPanel>
+                <Rectangle Style="{StaticResource Divider}" />
+                <DockPanel Style="{StaticResource Row}">
+                    <CheckBox x:Name="FillersToggle" DockPanel.Dock="Right" Style="{StaticResource Toggle}" AutomationProperties.Name="Remove filler words" />
+                    <TextBlock VerticalAlignment="Center" Text="Remove filler words" />
+                </DockPanel>
+                <Rectangle Style="{StaticResource Divider}" />
+                <DockPanel Style="{StaticResource Row}">
+                    <ComboBox x:Name="MicrophoneBox" DockPanel.Dock="Right" Width="200" AutomationProperties.Name="Microphone" />
+                    <TextBlock VerticalAlignment="Center" Text="Microphone" />
+                </DockPanel>
+            </StackPanel>
+        </Border>
+
+        <TextBlock Style="{StaticResource SectionLabel}" Text="Recognition" />
+        <Border Style="{StaticResource Card}">
+            <StackPanel>
+                <DockPanel Style="{StaticResource Row}">
+                    <Border DockPanel.Dock="Right" Style="{StaticResource SegmentGroup}">
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton x:Name="GpuOption" Style="{StaticResource Segment}" Content="GPU" GroupName="SettingsDevice" />
+                            <RadioButton x:Name="CpuOption" Style="{StaticResource Segment}" Content="CPU" GroupName="SettingsDevice" />
+                        </StackPanel>
+                    </Border>
+                    <TextBlock VerticalAlignment="Center" Text="Run on" />
+                </DockPanel>
+                <Rectangle Style="{StaticResource Divider}" />
+                <DockPanel Style="{StaticResource Row}">
+                    <ComboBox x:Name="IdleBox" DockPanel.Dock="Right" AutomationProperties.Name="Free VRAM after" />
+                    <TextBlock VerticalAlignment="Center" Text="Free VRAM after" />
+                </DockPanel>
+                <Rectangle Style="{StaticResource Divider}" />
+                <DockPanel Style="{StaticResource Row}">
+                    <CheckBox x:Name="RamToggle" DockPanel.Dock="Right" Style="{StaticResource Toggle}" AutomationProperties.Name="Keep model in RAM" />
+                    <TextBlock VerticalAlignment="Center" Text="Keep model in RAM" />
+                </DockPanel>
+            </StackPanel>
+        </Border>
+
+        <TextBlock Style="{StaticResource SectionLabel}" Text="History" />
+        <Border Style="{StaticResource Card}">
+            <StackPanel>
+                <DockPanel Style="{StaticResource Row}">
+                    <CheckBox x:Name="SaveHistoryToggle" DockPanel.Dock="Right" Style="{StaticResource Toggle}" AutomationProperties.Name="Keep history after restart" />
+                    <TextBlock VerticalAlignment="Center" Text="Keep history after restart" />
+                </DockPanel>
+                <Rectangle Style="{StaticResource Divider}" />
+                <DockPanel Style="{StaticResource Row}">
+                    <Button x:Name="ClearHistoryButton" DockPanel.Dock="Right" Style="{StaticResource PlainButton}" VerticalAlignment="Center" Content="Clear" />
+                    <TextBlock VerticalAlignment="Center" Text="Last 5 transcripts" />
+                </DockPanel>
+            </StackPanel>
+        </Border>
+
+        <TextBlock Style="{StaticResource SectionLabel}" Text="System" />
+        <Border Style="{StaticResource Card}">
+            <StackPanel>
+                <DockPanel Style="{StaticResource Row}">
+                    <CheckBox x:Name="AutostartToggle" DockPanel.Dock="Right" Style="{StaticResource Toggle}" AutomationProperties.Name="Start with Windows" />
+                    <TextBlock VerticalAlignment="Center" Text="Start with Windows" />
+                </DockPanel>
+                <Rectangle Style="{StaticResource Divider}" />
+                <DockPanel Style="{StaticResource Row}">
+                    <Button x:Name="LogsButton" DockPanel.Dock="Right" Style="{StaticResource PlainButton}" VerticalAlignment="Center" Content="Open" />
+                    <TextBlock VerticalAlignment="Center" Text="Logs" />
+                </DockPanel>
+            </StackPanel>
+        </Border>
+
+        <TextBlock x:Name="VersionText" Margin="4,16,0,0" Style="{StaticResource Hint}" />
+    </StackPanel>
+</Window>

@@ -32,6 +32,9 @@ public sealed class DictationController
     private readonly SileroVad _vad;
     private readonly IDictationView _view;
     private readonly Func<AppSettings, IAudioSource> _audioSource;
+    /// <summary>Peak level below which the microphone is treated as muted (normal room noise is well above).</summary>
+    private const double SilentMicrophoneDb = -60;
+
     private readonly Channel<Work> _work = Channel.CreateUnbounded<Work>(new UnboundedChannelOptions { SingleReader = true });
     private Session? _current;
     private int _nextSessionId;
@@ -131,6 +134,7 @@ public sealed class DictationController
     {
         var windows = 0;
         var peak = 0f;
+        var loudest = 0f;
         try
         {
             await foreach (var window in session.Microphone.Windows.ReadAllAsync())
@@ -141,6 +145,10 @@ public sealed class DictationController
                 }
                 var probability = _vad.Process(window);
                 windows++;
+                foreach (var sample in window)
+                {
+                    loudest = Math.Max(loudest, Math.Abs(sample));
+                }
                 peak = Math.Max(peak, probability);
                 foreach (var e in session.Segmenter.Add(window, probability))
                 {
@@ -162,10 +170,25 @@ public sealed class DictationController
                     Dispatch(session, e);
                 }
             }
-            _work.Writer.TryWrite(new SessionEnded(session.Id));
+            var seconds = windows * 0.032;
+            var level = 20 * Math.Log10(Math.Max(loudest, 1e-6f));
+            _work.Writer.TryWrite(new SessionEnded(session.Id, NoSpeechMessage(session, seconds, level)));
             session.Microphone.Dispose();
-            Log.Write($"session {session.Id} audio: {windows * 0.032:F1} s, peak speech probability {peak:F2}, {session.Phrases} phrase(s)");
+            Log.Write($"session {session.Id} audio: {seconds:F1} s, peak level {level:F0} dBFS, peak speech probability {peak:F2}, {session.Phrases} phrase(s)");
         }
+    }
+
+    /// <summary>
+    /// A hold of a second or more that produced no phrase gets a hint instead of silently doing nothing, so a
+    /// muted or wrong microphone is noticed. A near-zero level means the device delivers silence.
+    /// </summary>
+    private static string? NoSpeechMessage(Session session, double seconds, double levelDb)
+    {
+        if (session.Cancelled || session.Phrases > 0 || seconds < 1.0)
+        {
+            return null;
+        }
+        return levelDb < SilentMicrophoneDb ? "Microphone is silent" : "No speech heard";
     }
 
     private void Dispatch(Session session, SegmenterEvent e)
@@ -253,14 +276,18 @@ public sealed class DictationController
                     Interlocked.Decrement(ref session.PendingPhrases);
                 }
                 break;
-            case SessionEnded:
+            case SessionEnded ended:
                 Type(state.Assembler.Finish(), state.Text);
                 assemblers.Remove(work.SessionId);
                 if (state.Text.Length > 0)
                 {
                     TranscriptCompleted?.Invoke(state.Text.ToString());
                 }
-                if (_current is { Ended: true } current && current.Id == work.SessionId)
+                if (ended.NoSpeech is { } hint)
+                {
+                    _view.ShowError(hint);
+                }
+                else if (_current is { Ended: true } current && current.Id == work.SessionId)
                 {
                     _view.Hide();
                 }
@@ -313,6 +340,6 @@ public sealed class DictationController
 
     private abstract record Work(int SessionId);
     private sealed record PhraseWork(int SessionId, float[] Context, float[] Samples) : Work(SessionId);
-    private sealed record SessionEnded(int SessionId) : Work(SessionId);
+    private sealed record SessionEnded(int SessionId, string? NoSpeech = null) : Work(SessionId);
     private sealed record SessionCancelled(int SessionId) : Work(SessionId);
 }

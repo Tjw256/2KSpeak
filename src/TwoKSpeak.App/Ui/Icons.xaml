@@ -1,0 +1,76 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!--
+        2K monogram. The 64-unit drawing is used at 24 px and up; the 16-unit drawing is hand-placed on the
+        pixel grid for the 16/20 px tray sizes, where the large one blurs. The red dot marks "listening".
+        Each image repeats its parts because a Drawing can't be shared between groups from XAML, and the clip
+        pins the bounds so the idle and listening variants scale identically.
+        Sources and renders: 02 - 2KSpeak - Assets/icons.
+    -->
+    <DrawingImage x:Key="IconLarge">
+        <DrawingImage.Drawing>
+            <DrawingGroup ClipGeometry="M0,0 H64 V64 H0 Z">
+                <GeometryDrawing Brush="#000000" Geometry="M6,0 H58 A6,6 0 0 1 64,6 V58 A6,6 0 0 1 58,64 H6 A6,6 0 0 1 0,58 V6 A6,6 0 0 1 6,0 Z">
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#1B1B1B" Thickness="2" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Geometry="M11,22 C11,13 27,13 27,21 C27,29 11,36 11,46 H28 M36,15 V47 M36,33 L52,15 M41,28 L53,47">
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#F2F2F2" Thickness="6" StartLineCap="Round" EndLineCap="Round" LineJoin="Round" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="IconLargeListening">
+        <DrawingImage.Drawing>
+            <DrawingGroup ClipGeometry="M0,0 H64 V64 H0 Z">
+                <GeometryDrawing Brush="#000000" Geometry="M6,0 H58 A6,6 0 0 1 64,6 V58 A6,6 0 0 1 58,64 H6 A6,6 0 0 1 0,58 V6 A6,6 0 0 1 6,0 Z">
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#1B1B1B" Thickness="2" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Geometry="M11,22 C11,13 27,13 27,21 C27,29 11,36 11,46 H28 M36,15 V47 M36,33 L52,15 M41,28 L53,47">
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#F2F2F2" Thickness="6" StartLineCap="Round" EndLineCap="Round" LineJoin="Round" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#FF5C62" Geometry="M41,52 A11,11 0 1 1 63,52 A11,11 0 1 1 41,52 Z">
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#000000" Thickness="4" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="IconSmall">
+        <DrawingImage.Drawing>
+            <DrawingGroup ClipGeometry="M0,0 H16 V16 H0 Z">
+                <GeometryDrawing Brush="#000000" Geometry="M2,0 H14 A2,2 0 0 1 16,2 V14 A2,2 0 0 1 14,16 H2 A2,2 0 0 1 0,14 V2 A2,2 0 0 1 2,0 Z" />
+                <GeometryDrawing Geometry="M2.6,5.4 C2.6,2.6 7.2,2.6 7.2,5.2 C7.2,7.6 2.8,9.2 2.8,12.6 H7.4 M10,3.4 V12.6 M10,8.6 L13.6,3.4 M11.2,7 L13.8,12.6">
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#F2F2F2" Thickness="1.9" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="IconSmallListening">
+        <DrawingImage.Drawing>
+            <DrawingGroup ClipGeometry="M0,0 H16 V16 H0 Z">
+                <GeometryDrawing Brush="#000000" Geometry="M2,0 H14 A2,2 0 0 1 16,2 V14 A2,2 0 0 1 14,16 H2 A2,2 0 0 1 0,14 V2 A2,2 0 0 1 2,0 Z" />
+                <GeometryDrawing Geometry="M2.6,5.4 C2.6,2.6 7.2,2.6 7.2,5.2 C7.2,7.6 2.8,9.2 2.8,12.6 H7.4 M10,3.4 V12.6 M10,8.6 L13.6,3.4 M11.2,7 L13.8,12.6">
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#F2F2F2" Thickness="1.9" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#FF5C62" Geometry="M9.5,12.5 A3,3 0 1 1 15.5,12.5 A3,3 0 1 1 9.5,12.5 Z">
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#000000" Thickness="1" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+</ResourceDictionary>

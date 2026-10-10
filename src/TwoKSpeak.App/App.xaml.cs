@@ -16,22 +16,40 @@ namespace TwoKSpeak.App;
 
 public partial class App : Application
 {
+    private const string InstanceName = @"Local\2KSpeak.SingleInstance";
+    /// <summary>Signalled by a second launch (e.g. from the Start menu) to bring up the settings window.</summary>
+    private const string ShowSettingsName = @"Local\2KSpeak.ShowSettings";
+    private static readonly int[] TrayIconSizes = [16, 20, 24, 32, 48];
+
     private Mutex? _singleInstance;
+    private EventWaitHandle? _showSettingsSignal;
     private TaskbarIcon? _tray;
+    private System.Drawing.Icon? _idleIcon;
+    private System.Drawing.Icon? _listeningIcon;
     private KeyboardHook? _hook;
     private WorkerClient? _worker;
     private SileroVad? _vad;
     private ModelRamCache? _ramCache;
+    private SettingsStore? _settings;
+    private HistoryStore? _history;
+    private FlyoutWindow? _flyout;
+    private SettingsWindow? _settingsWindow;
     private readonly CancellationTokenSource _shutdown = new();
     private Task? _dictation;
-    private AppSettings _settings = new();
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        _singleInstance = new Mutex(true, @"Local\2KSpeak.SingleInstance", out var first);
+        _singleInstance = new Mutex(true, InstanceName, out var first);
         if (!first)
         {
+            if (EventWaitHandle.TryOpenExisting(ShowSettingsName, out var running))
+            {
+                // This launch came from the user, so it may hand the foreground to the running instance.
+                NativeMethods.AllowSetForegroundWindow(NativeMethods.ASFW_ANY);
+                running.Set();
+                running.Dispose();
+            }
             Shutdown();
             return;
         }
@@ -40,8 +58,9 @@ public partial class App : Application
         DispatcherUnhandledException += (_, args) => Log.Write($"unhandled UI exception: {args.Exception}");
         AppDomain.CurrentDomain.UnhandledException += (_, args) => Log.Write($"unhandled exception: {args.ExceptionObject}");
         TaskScheduler.UnobservedTaskException += (_, args) => Log.Write($"unobserved task exception: {args.Exception}");
-        _settings = AppSettings.Load();
-        var missing = MissingModels(_settings);
+        _settings = new SettingsStore(AppPaths.Settings);
+        var settings = _settings.Current;
+        var missing = MissingModels(settings);
         if (missing.Count > 0)
         {
             Log.Write($"missing models: {string.Join(", ", missing)}");
@@ -51,35 +70,111 @@ public partial class App : Application
             return;
         }
 
+        _history = new HistoryStore(AppPaths.History, settings.SaveHistory);
         _ramCache = new ModelRamCache();
-        if (_settings.KeepModelInRam)
-        {
-            _ramCache.Hold(ModelFiles(_settings));
-        }
+        HoldModelsInRam(settings);
 
-        var overlay = new OverlayWindow();
         _vad = new SileroVad(AppPaths.SileroVad);
-        _worker = new WorkerClient(() => _settings);
+        _worker = new WorkerClient(() => _settings.Current);
+        _hook = new KeyboardHook(settings.Hotkey);
+        _flyout = new FlyoutWindow(_settings, _history, _worker, ShowSettings);
+        var view = new ListeningView(new OverlayWindow(), listening => Dispatcher.BeginInvoke(() => SetListening(listening)));
         var testAudio = Environment.GetEnvironmentVariable("TWOKSPEAK_TEST_AUDIO");
-        var controller = new DictationController(() => _settings, _worker, _vad, overlay,
-            settings => testAudio is null ? new Microphone(settings.MicrophoneDevice) : new WavAudioSource(testAudio));
-        controller.TranscriptCompleted += text => Log.Write($"dictation finished ({text.Length} chars)");
-        _hook = new KeyboardHook();
+        var controller = new DictationController(() => _settings.Current, _worker, _vad, view,
+            s => testAudio is null ? new Microphone(Microphone.ResolveDevice(s.Microphone)) : new WavAudioSource(testAudio));
+        controller.TranscriptCompleted += text =>
+        {
+            Log.Write($"dictation finished ({text.Length} chars)");
+            _history.Add(text, DateTimeOffset.Now);
+        };
+        _settings.Changed += OnSettingsChanged;
         _dictation = Task.Run(() => controller.RunAsync(_hook.Signals, _shutdown.Token));
-        CreateTray();
+        CreateTray(settings);
+
+        _showSettingsSignal = new EventWaitHandle(false, EventResetMode.AutoReset, ShowSettingsName);
+        ThreadPool.RegisterWaitForSingleObject(_showSettingsSignal, (_, _) => Dispatcher.BeginInvoke(ShowSettings), null, Timeout.Infinite, executeOnlyOnce: false);
     }
 
-    private void CreateTray()
+    private void CreateTray(AppSettings settings)
     {
+        _idleIcon = IconFactory.FromDrawings((ImageSource)Resources["IconSmall"], (ImageSource)Resources["IconLarge"], TrayIconSizes);
+        _listeningIcon = IconFactory.FromDrawings((ImageSource)Resources["IconSmallListening"], (ImageSource)Resources["IconLargeListening"], TrayIconSizes);
+
+        var settingsItem = new MenuItem { Header = "Settings" };
+        settingsItem.Click += (_, _) => ShowSettings();
         var quit = new MenuItem { Header = "Quit 2KSpeak" };
         quit.Click += (_, _) => Shutdown();
         _tray = new TaskbarIcon
         {
-            ToolTipText = "2KSpeak — hold Ctrl+Win to dictate",
-            Icon = IconFactory.FromDrawing((ImageSource)Resources["TrayIdleIcon"], 16, 20, 24, 32, 48),
-            ContextMenu = new ContextMenu { Items = { quit } },
+            ToolTipText = TrayToolTip(settings),
+            Icon = _idleIcon,
+            NoLeftClickDelay = true,
+            ContextMenu = new ContextMenu { Items = { settingsItem, quit } },
         };
+        _tray.TrayLeftMouseUp += (_, _) => _flyout?.Toggle();
         _tray.ForceCreate();
+    }
+
+    private static string TrayToolTip(AppSettings settings) => $"2KSpeak · hold {Hotkey.Format(settings.Hotkey)} to dictate";
+
+    private void SetListening(bool listening)
+    {
+        if (_tray is not null)
+        {
+            _tray.Icon = listening ? _listeningIcon : _idleIcon;
+        }
+        _flyout?.SetListening(listening);
+    }
+
+    private void ShowSettings()
+    {
+        _settingsWindow ??= new SettingsWindow(_settings!, _history!, _hook!);
+        _settingsWindow.ShowAndActivate();
+    }
+
+    private void OnSettingsChanged(AppSettings previous, AppSettings current)
+    {
+        if (previous.Hotkey != current.Hotkey)
+        {
+            _hook!.SetChord(current.Hotkey);
+            _tray!.ToolTipText = TrayToolTip(current);
+        }
+        if (previous.Device != current.Device || previous.IdleUnloadMinutes != current.IdleUnloadMinutes)
+        {
+            _ = ApplyWorkerSettingsAsync();
+        }
+        if (previous.Device != current.Device || previous.KeepModelInRam != current.KeepModelInRam)
+        {
+            HoldModelsInRam(current);
+        }
+        if (previous.SaveHistory != current.SaveHistory)
+        {
+            _history!.SetSaving(current.SaveHistory);
+        }
+    }
+
+    private async Task ApplyWorkerSettingsAsync()
+    {
+        try
+        {
+            await _worker!.ApplySettingsAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"applying worker settings failed: {ex}");
+        }
+    }
+
+    private void HoldModelsInRam(AppSettings settings)
+    {
+        if (settings.KeepModelInRam)
+        {
+            _ramCache!.Hold(ModelFiles(settings));
+        }
+        else
+        {
+            _ramCache!.Release();
+        }
     }
 
     private static IEnumerable<string> ModelFiles(AppSettings settings) => settings.Device == RecognitionDevice.Gpu
@@ -104,6 +199,9 @@ public partial class App : Application
         _vad?.Dispose();
         _ramCache?.Dispose();
         _tray?.Dispose();
+        _idleIcon?.Dispose();
+        _listeningIcon?.Dispose();
+        _showSettingsSignal?.Dispose();
         _singleInstance?.Dispose();
         Log.Write("exited");
         base.OnExit(e);

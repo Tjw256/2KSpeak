@@ -35,6 +35,9 @@ public sealed class Microphone : IAudioSource
     public static IReadOnlyList<string> DeviceNames() =>
         Enumerable.Range(0, WaveIn.DeviceCount).Select(i => WaveIn.GetCapabilities(i).ProductName).ToList();
 
+    /// <summary>Device index for a saved name; the default device (-1) when unset or no longer connected.</summary>
+    public static int ResolveDevice(string? name) => name is null ? -1 : DeviceNames().ToList().IndexOf(name);
+
     public void Start() => _waveIn.StartRecording();
 
     public void Stop() => _waveIn.StopRecording();

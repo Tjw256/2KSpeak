@@ -6,6 +6,7 @@
     <RootNamespace>TwoKSpeak.App</RootNamespace>
     <AssemblyName>2KSpeak</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\2KSpeak.ico</ApplicationIcon>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>

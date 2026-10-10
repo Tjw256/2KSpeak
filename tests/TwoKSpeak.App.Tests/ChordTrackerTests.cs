@@ -1,5 +1,6 @@
 using TwoKSpeak.App.Input;
 using static TwoKSpeak.App.Input.ChordTracker;
+using static TwoKSpeak.App.Input.Hotkey;
 
 namespace TwoKSpeak.App.Tests;
 
@@ -7,9 +8,8 @@ public class ChordTrackerTests
 {
     private const ushort KeyA = 0x41;
     private const ushort Right = 0x27;
-    private const ushort LShift = 0xA0;
 
-    private readonly ChordTracker _tracker = new();
+    private readonly ChordTracker _tracker = new(Hotkey.Default);
 
     private HookDecision Down(ushort vk) => _tracker.Process(vk, down: true, ownInjection: false);
     private HookDecision Up(ushort vk) => _tracker.Process(vk, down: false, ownInjection: false);
@@ -136,5 +136,92 @@ public class ChordTrackerTests
 
         Down(RCtrl);
         Assert.Equal(ChordSignal.Start, Down(RWin).Signal);
+    }
+
+    [Fact]
+    public void OtherChordsWorkAndAltReleaseIsMasked()
+    {
+        var tracker = new ChordTracker(Modifiers.Win | Modifiers.Alt);
+
+        tracker.Process(LAlt, down: true, ownInjection: false);
+        var start = tracker.Process(RWin, down: true, ownInjection: false);
+
+        Assert.Equal(ChordSignal.Start, start.Signal);
+        Assert.Equal([new KeyStroke(MenuMask, true), new KeyStroke(MenuMask, false), new KeyStroke(LAlt, false)], start.Inject);
+        Assert.Equal(ChordSignal.Cancel, tracker.Process(LCtrl, down: true, ownInjection: false).Signal); // not part of this chord
+    }
+
+    [Fact]
+    public void ThreeKeyChordNeedsAllThree()
+    {
+        var tracker = new ChordTracker(Modifiers.Ctrl | Modifiers.Win | Modifiers.Shift);
+
+        tracker.Process(LCtrl, down: true, ownInjection: false);
+        Assert.Equal(ChordSignal.None, tracker.Process(LWin, down: true, ownInjection: false).Signal);
+        Assert.Equal(ChordSignal.Start, tracker.Process(LShift, down: true, ownInjection: false).Signal);
+    }
+
+    [Fact]
+    public void CaptureHidesEverythingAndReportsThePeakChord()
+    {
+        _tracker.BeginCapture();
+
+        Assert.True(Down(LCtrl).Swallow);
+        Assert.True(Down(LAlt).Swallow);
+        Assert.True(Down(LShift).Swallow);
+        Assert.Null(Up(LShift).Capture);
+        Assert.Null(Up(LAlt).Capture);
+        var done = Up(LCtrl);
+
+        Assert.True(done.Swallow);
+        Assert.Equal(new CaptureOutcome(Modifiers.Ctrl | Modifiers.Alt | Modifiers.Shift), done.Capture);
+        Assert.Equal(ChordSignal.None, done.Signal);
+        Assert.Equal(HookDecision.PassThrough, Down(KeyA)); // capture is over
+    }
+
+    [Fact]
+    public void CaptureEndsOnAnyReleaseAndRejectsLetters()
+    {
+        _tracker.BeginCapture();
+
+        Assert.True(Down(LCtrl).Swallow);
+        Assert.True(Down(KeyA).Swallow);
+        Assert.Null(Up(KeyA).Capture);
+        var done = Up(LCtrl);
+
+        Assert.Equal(new CaptureOutcome(Modifiers.None), done.Capture);
+        Assert.NotNull(Hotkey.Problem(done.Capture!.Chord!.Value));
+        Assert.Equal(HookDecision.PassThrough, Down(KeyA)); // the keyboard is back to normal
+    }
+
+    [Fact]
+    public void EscapeCancelsCapture()
+    {
+        _tracker.BeginCapture();
+
+        var escape = Down(0x1B);
+
+        Assert.True(escape.Swallow);
+        Assert.Equal(new CaptureOutcome(null), escape.Capture);
+    }
+}
+
+public class HotkeyTests
+{
+    [Theory]
+    [InlineData(Modifiers.Ctrl | Modifiers.Win, null)]
+    [InlineData(Modifiers.Win | Modifiers.Alt | Modifiers.Shift, null)]
+    [InlineData(Modifiers.Ctrl, "Use at least two modifier keys")]
+    [InlineData(Modifiers.Ctrl | Modifiers.Alt, "Ctrl+Alt is AltGr on many keyboard layouts")]
+    [InlineData(Modifiers.Ctrl | Modifiers.Win | Modifiers.Alt | Modifiers.Shift, "Use at most three modifier keys")]
+    public void ValidatesChords(Modifiers chord, string? problem)
+    {
+        Assert.Equal(problem, Hotkey.Problem(chord));
+    }
+
+    [Fact]
+    public void FormatsInAFixedOrder()
+    {
+        Assert.Equal("Ctrl + Win", Hotkey.Format(Modifiers.Win | Modifiers.Ctrl));
     }
 }

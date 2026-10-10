@@ -3,19 +3,11 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
-        <!-- Placeholder tray glyph (white microphone on black); the designed icon set replaces it in the UI PR. -->
-        <DrawingImage x:Key="TrayIdleIcon">
-            <DrawingImage.Drawing>
-                <DrawingGroup>
-                    <GeometryDrawing Brush="#000000" Geometry="M0,0 H32 V32 H0 Z" />
-                    <GeometryDrawing Brush="#F2F2F2" Geometry="M12,6 A4,4 0 0 1 20,6 V16 A4,4 0 0 1 12,16 Z" />
-                    <GeometryDrawing Geometry="M8,14 A8,8 0 0 0 24,14 M16,22 V27 M11,27 H21">
-                        <GeometryDrawing.Pen>
-                            <Pen Brush="#F2F2F2" Thickness="2.4" StartLineCap="Round" EndLineCap="Round" />
-                        </GeometryDrawing.Pen>
-                    </GeometryDrawing>
-                </DrawingGroup>
-            </DrawingImage.Drawing>
-        </DrawingImage>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Ui/Theme.xaml" />
+                <ResourceDictionary Source="Ui/Icons.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
     </Application.Resources>
 </Application>

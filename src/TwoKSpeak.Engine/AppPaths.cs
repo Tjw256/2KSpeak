@@ -19,4 +19,5 @@ public static class AppPaths
     public static string CudaRuntime => Path.Combine(LocalRoot, "runtimes", "cuda");
     public static string Logs => Path.Combine(LocalRoot, "logs");
     public static string Settings => Path.Combine(RoamingRoot, "settings.json");
+    public static string History => Path.Combine(RoamingRoot, "history.json");
 }

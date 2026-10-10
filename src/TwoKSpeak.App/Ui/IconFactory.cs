@@ -7,9 +7,12 @@ namespace TwoKSpeak.App.Ui;
 /// <summary>Renders vector artwork into a Windows icon (PNG-compressed ICO entries) for the tray.</summary>
 public static class IconFactory
 {
-    public static System.Drawing.Icon FromDrawing(ImageSource drawing, params int[] sizes)
+    /// <summary>Largest size that uses the pixel-hinted small drawing; the tray asks for 16 or 20 px.</summary>
+    private const int SmallMaxSize = 20;
+
+    public static System.Drawing.Icon FromDrawings(ImageSource small, ImageSource large, params int[] sizes)
     {
-        var pngs = sizes.Select(size => (Size: size, Png: RenderPng(drawing, size))).ToList();
+        var pngs = sizes.Select(size => (Size: size, Png: RenderPng(size <= SmallMaxSize ? small : large, size))).ToList();
         using var ico = new MemoryStream();
         using (var writer = new BinaryWriter(ico, System.Text.Encoding.UTF8, leaveOpen: true))
         {
