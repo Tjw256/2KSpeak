@@ -44,7 +44,7 @@ if (device == ComputeDevice.Cuda)
 }
 
 if (device == ComputeDevice.DirectML)
-    Console.WriteLine($"DirectML adapter {DirectMlAdapter.Select(out var adapterName)}: {adapterName}");
+    Console.WriteLine($"DirectML adapter: {Gpu.Detected?.Adapter.Name ?? "none usable, using adapter 0"} (TWOKSPEAK_GPU=<index> picks another)");
 var vramBefore = Vram.UsedMiB();
 var sw = Stopwatch.StartNew();
 using var recognizer = new ParakeetRecognizer(ParakeetModelFiles.FromDirectory(modelDir, precision), device, decoderDevice)

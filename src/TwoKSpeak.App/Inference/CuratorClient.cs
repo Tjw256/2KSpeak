@@ -3,6 +3,7 @@ using TwoKSpeak.App.Diagnostics;
 using TwoKSpeak.App.Settings;
 using TwoKSpeak.Engine;
 using TwoKSpeak.Engine.Curator;
+using TwoKSpeak.Engine.Onnx;
 using TwoKSpeak.Engine.Setup;
 
 namespace TwoKSpeak.App.Inference;
@@ -161,18 +162,19 @@ public sealed class CuratorClient : IAsyncDisposable
         {
             try
             {
-                server = await LlamaServer.StartAsync(AppPaths.LlamaRuntime, path, gpu: true, CancellationToken.None);
+                var gpu = Gpu.Detected ?? throw new CuratorException("no usable GPU");
+                server = await LlamaServer.StartAsync(AppPaths.LlamaRuntime, path, gpu, CancellationToken.None);
             }
             catch (CuratorException ex)
             {
                 Log.Write($"cleanup GPU unavailable, using CPU: {ex.Message}");
                 device = RecognitionDevice.Cpu;
-                server = await LlamaServer.StartAsync(AppPaths.LlamaRuntime, path, gpu: false, CancellationToken.None);
+                server = await LlamaServer.StartAsync(AppPaths.LlamaRuntime, path, gpu: null, CancellationToken.None);
             }
         }
         else
         {
-            server = await LlamaServer.StartAsync(AppPaths.LlamaRuntime, path, gpu: false, CancellationToken.None);
+            server = await LlamaServer.StartAsync(AppPaths.LlamaRuntime, path, gpu: null, CancellationToken.None);
         }
         ActiveDevice = device;
         Log.Write($"cleanup model {model} ready ({device}) in {watch.ElapsedMilliseconds} ms");

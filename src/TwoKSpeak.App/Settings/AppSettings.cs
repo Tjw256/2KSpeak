@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using TwoKSpeak.App.Diagnostics;
 using TwoKSpeak.App.Input;
+using TwoKSpeak.Engine.Onnx;
 
 namespace TwoKSpeak.App.Settings;
 
@@ -46,6 +47,13 @@ public sealed record AppSettings
     public Cleanup Cleanup { get; init; } = Cleanup.LargeModel;
     /// <summary>Where the cleanup model runs; null until the first start picks one from the GPU's capability.</summary>
     public RecognitionDevice? CleanupDevice { get; init; }
+    /// <summary>
+    /// The GPU the devices above were chosen for. An AMD or Intel GPU that 0.5.0 couldn't use gets new defaults once;
+    /// after that, the user's choice stands.
+    /// </summary>
+    public string? GpuChosenFor { get; init; }
+    /// <summary>An integrated GPU waits for GPU mode to download, then a speed test against the CPU decides the devices.</summary>
+    public bool GpuSpeedTestPending { get; init; }
     public TypeWhen TypeWhen { get; init; } = TypeWhen.Released;
     /// <summary>Keep the model files mapped in RAM so loading to the GPU never waits on the disk.</summary>
     public bool KeepModelInRam { get; init; } = true;
@@ -61,6 +69,33 @@ public sealed record AppSettings
         WriteIndented = true,
         Converters = { new JsonStringEnumConverter() },
     };
+
+    /// <summary>
+    /// Devices for this PC's GPU. A GPU with room for both models runs both from the start; an integrated GPU starts
+    /// on the CPU until its speed test. Applies on the first start, and once for an AMD or Intel GPU that an earlier
+    /// version left on the CPU; otherwise only fills in a missing cleanup device (settings from before cleanup).
+    /// </summary>
+    public AppSettings WithGpuDefaults(GpuChoice? gpu, bool firstRun)
+    {
+        var device = gpu is { MeasureFirst: false } ? RecognitionDevice.Gpu : RecognitionDevice.Cpu;
+        if (firstRun || (gpu is { Backend: GpuBackend.DirectML } && GpuChosenFor != gpu.Adapter.Name))
+        {
+            return this with
+            {
+                Device = device,
+                CleanupDevice = device,
+                GpuChosenFor = gpu?.Adapter.Name,
+                GpuSpeedTestPending = gpu?.MeasureFirst == true,
+            };
+        }
+        return CleanupDevice is null ? this with { CleanupDevice = device } : this;
+    }
+
+    /// <summary>The speed test's verdict. Devices the user picked while it was pending stand.</summary>
+    public AppSettings WithSpeedTestResult(bool gpuFaster) =>
+        gpuFaster && Device == RecognitionDevice.Cpu && CleanupDevice == RecognitionDevice.Cpu
+            ? this with { Device = RecognitionDevice.Gpu, CleanupDevice = RecognitionDevice.Gpu, GpuSpeedTestPending = false }
+            : this with { GpuSpeedTestPending = false };
 
     /// <summary>Clamps values a hand-edited file could put out of range.</summary>
     public AppSettings Normalized() => this with

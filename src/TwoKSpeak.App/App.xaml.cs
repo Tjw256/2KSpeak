@@ -12,6 +12,7 @@ using TwoKSpeak.App.Settings;
 using TwoKSpeak.App.Setup;
 using TwoKSpeak.App.Ui;
 using TwoKSpeak.Engine;
+using TwoKSpeak.Engine.Onnx;
 using TwoKSpeak.Engine.Setup;
 using TwoKSpeak.Engine.Vad;
 
@@ -75,21 +76,12 @@ public partial class App : Application
         TaskScheduler.UnobservedTaskException += (_, args) => Log.Write($"unobserved task exception: {args.Exception}");
         var firstRun = !File.Exists(AppPaths.Settings);
         _settings = new SettingsStore(AppPaths.Settings);
-        // A card supported by this build with room for both models gets GPU mode; otherwise use CPU.
-        var gpuCapable = GpuCapability.CanRunCurator();
-        if (firstRun)
-        {
-            var device = gpuCapable ? RecognitionDevice.Gpu : RecognitionDevice.Cpu;
-            Log.Write($"first run: speech and cleanup on {device}");
-            _settings.Update(s => s with { Device = device, CleanupDevice = device });
-        }
-        else if (_settings.Current.CleanupDevice is null)
-        {
-            Log.Write($"cleanup device chosen: {(gpuCapable ? "GPU" : "CPU")}");
-            _settings.Update(s => s with { CleanupDevice = gpuCapable ? RecognitionDevice.Gpu : RecognitionDevice.Cpu });
-        }
+        var gpu = Gpu.Detected;
+        Log.Write(gpu is null ? "GPU: none usable, CPU only"
+            : $"GPU: {gpu.Adapter.Name}, {gpu.Backend}{(gpu.MeasureFirst ? ", integrated: speed test decides" : "")}");
+        ChooseDevices(gpu, firstRun);
         var settings = _settings.Current;
-        _setup = new SetupCoordinator(ComponentInstaller.CreateDefault(Version), gpuCapable, () => _settings.Current);
+        _setup = new SetupCoordinator(ComponentInstaller.CreateDefault(Version), gpu, () => _settings.Current);
         if (_setup.IsReady(ComponentId.Speech))
         {
             _speechReady.SetResult();
@@ -113,6 +105,10 @@ public partial class App : Application
         _setup.Failed += message => Dispatcher.BeginInvoke(() =>
             Notify("Download stopped", $"{message} Open 2KSpeak from the tray to try again."));
         _setup.Start();
+        if (settings.GpuSpeedTestPending && _setup.IsReady(ComponentId.GpuMode))
+        {
+            _ = RunGpuSpeedTestAsync(); // GPU mode finished last session, but the app closed before the test
+        }
         if (!_setup.IsReady(ComponentId.Speech))
         {
             ShowSetup();
@@ -186,6 +182,9 @@ public partial class App : Application
             case ComponentId.CleanupSmall:
                 Notify("Text cleanup is on", "2KSpeak now removes “um”s and words you corrected yourself.");
                 break;
+            case ComponentId.GpuMode when _settings.Current.GpuSpeedTestPending:
+                _ = RunGpuSpeedTestAsync();
+                break;
             case ComponentId.GpuMode:
                 Notify("GPU mode is on", "Dictation now runs on your graphics card, which is much faster.");
                 break;
@@ -193,6 +192,38 @@ public partial class App : Application
         if (id is ComponentId.Speech or ComponentId.GpuMode)
         {
             HoldModelsInRam(_settings.Current);
+        }
+    }
+
+    private void ChooseDevices(GpuChoice? gpu, bool firstRun)
+    {
+        var previous = _settings!.Current;
+        _settings.Update(s => s.WithGpuDefaults(gpu, firstRun));
+        var current = _settings.Current;
+        if (current.Device != previous.Device || current.CleanupDevice != previous.CleanupDevice || current.GpuSpeedTestPending || firstRun)
+        {
+            Log.Write($"speech on {current.Device}, cleanup on {current.CleanupDevice}{(current.GpuSpeedTestPending ? " until the GPU speed test" : "")}");
+        }
+    }
+
+    /// <summary>Times the integrated GPU against the CPU once and moves speech and cleanup to the GPU if it wins.</summary>
+    private async Task RunGpuSpeedTestAsync()
+    {
+        if (Gpu.Detected is not { } gpu)
+        {
+            return;
+        }
+        var (gpuMs, cpuMs) = await GpuSpeedTest.RunAsync(gpu);
+        if (cpuMs is null)
+        {
+            return; // stays pending and runs again on the next start
+        }
+        var faster = gpuMs < cpuMs * GpuSpeedTest.Margin;
+        Log.Write($"GPU speed test: {gpu.Adapter.Name} {gpuMs?.ToString("F0") ?? "failed"} ms, CPU {cpuMs:F0} ms: using {(faster ? "GPU" : "CPU")}");
+        _settings!.Update(s => s.WithSpeedTestResult(faster));
+        if (faster)
+        {
+            Notify("GPU mode is on", "Your graphics chip is faster than the processor, so dictation now runs on it.");
         }
     }
 

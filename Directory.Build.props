@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <Version>0.5.0</Version>
+    <Version>0.6.0</Version>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -8,11 +8,18 @@
     <InvariantGlobalization>false</InvariantGlobalization>
     <!--
       Native ONNX Runtime flavor. The managed API must match the native package version,
-      so the flavor also pins OrtVersion. Cuda includes the CPU provider; Cpu is for CI and tests.
+      so the flavor also pins OrtVersion. Cuda includes the CPU provider; Cpu is for CI and tests. DirectML builds the
+      second worker, for AMD and Intel GPUs (its newest release is 1.24.4).
     -->
     <OrtFlavor Condition="'$(OrtFlavor)' == ''">Cuda</OrtFlavor>
     <OrtVersion Condition="'$(OrtFlavor)' != 'DirectML'">1.31.0</OrtVersion>
     <OrtVersion Condition="'$(OrtFlavor)' == 'DirectML'">1.24.4</OrtVersion>
-    <DefineConstants Condition="'$(OrtFlavor)' == 'DirectML'">$(DefineConstants);ORT_DIRECTML</DefineConstants>
+    <!--
+      The DirectML flavor keeps its own bin and obj, so it builds next to the default one (a release ships both
+      workers) without reusing the other's restore or its Engine compiled against the other ONNX Runtime version.
+    -->
+    <BaseIntermediateOutputPath Condition="'$(OrtFlavor)' == 'DirectML'">obj\dml\</BaseIntermediateOutputPath>
+    <BaseOutputPath Condition="'$(OrtFlavor)' == 'DirectML'">bin\dml\</BaseOutputPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);bin\**;obj\**</DefaultItemExcludes>
   </PropertyGroup>
 </Project>

@@ -15,7 +15,7 @@ public enum ComponentId
     Cleanup,
     /// <summary>Qwen3.5-0.8B, only when chosen.</summary>
     CleanupSmall,
-    /// <summary>CUDA and cuDNN runtime plus the fp16 speech model.</summary>
+    /// <summary>The fp16 speech model, plus CUDA and cuDNN on NVIDIA.</summary>
     GpuMode,
 }
 
@@ -59,10 +59,10 @@ public static class Components
     private static readonly Download LlamaVulkan = new(Llama + "llama-b11534-bin-win-vulkan-x64.zip",
         "9e6f267aa98fc17758dacb91454f809b7729aeb88a98a4a05d94393847cd0c8a", 33459008, "llama-b11534-bin-win-vulkan-x64.zip", ["*"]);
 
-    /// <param name="gpuCapable">Use CUDA or Vulkan according to the shipped ONNX Runtime flavor; CPU otherwise.</param>
-    public static Component Cleanup(bool gpuCapable) => new(ComponentId.Cleanup, "Text cleanup",
+    /// <param name="gpu">The llama.cpp build for this PC's GPU (CUDA or Vulkan); the CPU build without one.</param>
+    public static Component Cleanup(GpuBackend? gpu) => new(ComponentId.Cleanup, "Text cleanup",
     [
-        (AppPaths.LlamaRuntime, gpuCapable ? (GpuBackend.IsDirectMl ? LlamaVulkan : LlamaCuda) : LlamaCpu),
+        (AppPaths.LlamaRuntime, gpu switch { GpuBackend.Cuda => LlamaCuda, GpuBackend.DirectML => LlamaVulkan, _ => LlamaCpu }),
         (AppPaths.CuratorModels, Qwen2B),
     ]);
 
@@ -72,7 +72,7 @@ public static class Components
             "0ad885ffd4bb022fc4f0d33a3308fa108ef8613159d3b3a67e23abca056b7a6c", 811843840, "Qwen3.5-0.8B-Q8_0.gguf")),
     ]);
 
-    public static Component GpuMode { get; } = SelectGpuMode(new(ComponentId.GpuMode, "GPU mode",
+    private static readonly Component CudaGpuMode = new(ComponentId.GpuMode, "GPU mode",
     [
         (AppPaths.CudaRuntime, new(Nvidia + "cuda/redist/cuda_cudart/windows-x86_64/cuda_cudart-windows-x86_64-13.4.92-archive.zip",
             "621a70c4778287b1abf8c27c61b841d797fda2aeff01033374dd19624bcfa249", 2737397, "cuda_cudart-13.4.92.zip", ["cudart64_13.dll"])),
@@ -87,9 +87,10 @@ public static class Components
         (AppPaths.ParakeetFp16, ParakeetShared(ParakeetFp16, "nemo128.onnx", "a9fde1486ebfcc08f328d75ad4610c67835fea58c73ba57e3209a6f6cf019e9f", 139764)),
         (AppPaths.ParakeetFp16, ParakeetShared(ParakeetFp16, "vocab.txt", "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d", 93939)),
         (AppPaths.ParakeetFp16, ParakeetShared(ParakeetFp16, "config.json", "666903c76b9798caf2c210afd4f6cd60b08a8dbf9800ec8d7a3bc0d2148ac466", 97)),
-    ]));
+    ]);
 
-    private static Component SelectGpuMode(Component component) => GpuBackend.IsDirectMl
-        ? component with { Files = component.Files.Where(f => f.Directory != AppPaths.CudaRuntime).ToArray() }
-        : component;
+    /// <summary>DirectML comes with the app's second worker, so AMD and Intel GPUs need only the fp16 model.</summary>
+    public static Component GpuMode(GpuBackend backend) => backend == GpuBackend.Cuda
+        ? CudaGpuMode
+        : CudaGpuMode with { Files = CudaGpuMode.Files.Where(f => f.Directory != AppPaths.CudaRuntime).ToArray() };
 }

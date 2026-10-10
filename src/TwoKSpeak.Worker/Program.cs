@@ -1,6 +1,7 @@
 // Inference worker: loads the recognizer on the requested device and serves transcription requests from the
 // tray app over a named pipe. It is a separate process so that exiting it returns all of CUDA's memory.
 // Usage: 2KSpeak.Worker --pipe <name> --parent <pid> --device cuda|dml|cpu
+//        2KSpeak.Worker --benchmark <runs> --parent <pid> --device dml|cpu   (prints the median transcription ms)
 using System.Diagnostics;
 using System.IO.Pipes;
 using TwoKSpeak.Engine;
@@ -9,7 +10,6 @@ using TwoKSpeak.Engine.Ipc;
 using TwoKSpeak.Engine.Onnx;
 
 var options = ParseArgs(args);
-var pipeName = options["--pipe"];
 var device = options["--device"] switch
 {
     "cuda" => ComputeDevice.Cuda,
@@ -37,7 +37,9 @@ var loading = Task.Run(() =>
     var files = device != ComputeDevice.Cpu
         ? ParakeetModelFiles.FromDirectory(AppPaths.ParakeetFp16, "fp16")
         : ParakeetModelFiles.FromDirectory(AppPaths.ParakeetInt8, "int8");
-    var recognizer = new ParakeetRecognizer(files, device)
+    // An integrated GPU spends more on the decoder's many tiny steps than it gains; the CPU runs them ~5x faster.
+    var decoder = device == ComputeDevice.DirectML && Gpu.Detected?.MeasureFirst == true ? ComputeDevice.Cpu : (ComputeDevice?)null;
+    var recognizer = new ParakeetRecognizer(files, device, decoder)
     {
         // GPU kernels re-plan whenever the input length changes; 2 s buckets cut encoder time ~3x (docs/spike-results.md).
         FeatureBucketFrames = device != ComputeDevice.Cpu ? 200 : 0,
@@ -49,9 +51,37 @@ var loading = Task.Run(() =>
     return recognizer;
 });
 
+if (options.TryGetValue("--benchmark", out var runs))
+{
+    // The app's speed test for integrated GPUs: the same TTS phrase on each device, after the warm-up above.
+    try
+    {
+        using var clip = typeof(Program).Assembly.GetManifestResourceStream("benchmark.wav")
+            ?? throw new InvalidOperationException("benchmark.wav is not embedded.");
+        var samples = TwoKSpeak.Engine.Audio.WavFile.ReadMono16(clip, "benchmark.wav", out _);
+        using var recognizer = await loading;
+        var times = new List<double>();
+        for (var i = 0; i < int.Parse(runs); i++)
+        {
+            var watch = Stopwatch.StartNew();
+            recognizer.Transcribe(samples);
+            times.Add(watch.Elapsed.TotalMilliseconds);
+        }
+        var median = times.Order().ElementAt(times.Count / 2);
+        Log($"benchmark {device}: median {median:F0} ms of {times.Count}");
+        Console.WriteLine(median.ToString("F0", System.Globalization.CultureInfo.InvariantCulture));
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Log($"benchmark {device} failed: {ex}");
+        return 1;
+    }
+}
+
 try
 {
-    await using var pipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte,
+    await using var pipe = new NamedPipeServerStream(options["--pipe"], PipeDirection.InOut, 1, PipeTransmissionMode.Byte,
         PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
     await pipe.WaitForConnectionAsync(shutdown.Token);
     Log("client connected");
@@ -136,7 +166,7 @@ static Dictionary<string, string> ParseArgs(string[] args)
     {
         result[args[i]] = args[i + 1];
     }
-    foreach (var required in new[] { "--pipe", "--parent", "--device" })
+    foreach (var required in result.ContainsKey("--benchmark") ? new[] { "--parent", "--device" } : new[] { "--pipe", "--parent", "--device" })
     {
         if (!result.ContainsKey(required))
         {

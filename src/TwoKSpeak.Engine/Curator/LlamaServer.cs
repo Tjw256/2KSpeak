@@ -4,6 +4,7 @@ using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using TwoKSpeak.Engine.Onnx;
 
 namespace TwoKSpeak.Engine.Curator;
@@ -35,8 +36,8 @@ public sealed class LlamaServer : IAsyncDisposable
 
     public bool HasExited => _process.HasExited;
 
-    /// <param name="gpu">Offload all layers to the GPU; otherwise run on the CPU.</param>
-    public static async Task<LlamaServer> StartAsync(string runtimeDirectory, string modelPath, bool gpu, CancellationToken ct)
+    /// <param name="gpu">Offload all layers to this GPU; null runs on the CPU.</param>
+    public static async Task<LlamaServer> StartAsync(string runtimeDirectory, string modelPath, GpuChoice? gpu, CancellationToken ct)
     {
         var exe = Path.Combine(runtimeDirectory, "llama-server.exe");
         if (!File.Exists(exe))
@@ -60,7 +61,7 @@ public sealed class LlamaServer : IAsyncDisposable
             ArgumentList =
             {
                 "-m", modelPath,
-                "-ngl", gpu ? "99" : "0",
+                "-ngl", gpu is not null ? "99" : "0",
                 "-c", ContextTokens.ToString(),
                 "-t", Math.Max(1, Environment.ProcessorCount / 2).ToString(), // physical cores; SMT threads don't help
                 "-np", "1",
@@ -71,18 +72,29 @@ public sealed class LlamaServer : IAsyncDisposable
                 "--api-key", key,
             },
         };
-        if (gpu && !GpuBackend.IsDirectMl)
+        if (gpu is null)
+        {
+            // GPU builds would otherwise still use the GPU for parts of the prompt.
+            start.ArgumentList.Add("--device");
+            start.ArgumentList.Add("none");
+        }
+        else if (gpu.Backend == GpuBackend.Cuda)
         {
             // The CUDA build of llama.cpp loads cudart and cuBLAS from the GPU mode download, shared with the worker.
-            // On the CPU it is left out, so the CUDA backend finds no runtime and claims no VRAM.
             start.Environment["PATH"] = AppPaths.CudaRuntime + ";" + Environment.GetEnvironmentVariable("PATH");
         }
-        if (gpu && GpuBackend.IsDirectMl &&
-            Environment.GetEnvironmentVariable("TWOKSPEAK_VULKAN_DEVICE") is { Length: > 0 } vulkanDevice)
+        else
         {
-            // Vulkan's device indices are not DXGI indices. Let llama.cpp choose unless explicitly overridden.
-            start.ArgumentList.Add("--device");
-            start.ArgumentList.Add(vulkanDevice);
+            // llama.cpp numbers Vulkan devices its own way and would split the model across all of them, an integrated
+            // GPU included; pin it to the worker's adapter (matched by name) unless overridden.
+            var device = Environment.GetEnvironmentVariable("TWOKSPEAK_VULKAN_DEVICE") is { Length: > 0 } forced
+                ? forced
+                : await VulkanDeviceAsync(exe, gpu.Adapter.Name, ct);
+            if (device is not null)
+            {
+                start.ArgumentList.Add("--device");
+                start.ArgumentList.Add(device);
+            }
         }
 
         var job = new KillOnCloseJob();
@@ -167,6 +179,32 @@ public sealed class LlamaServer : IAsyncDisposable
             await Task.Delay(100, timeout.Token);
         }
     }
+
+    /// <summary>The Vulkan device (e.g. "Vulkan1") whose name matches the DXGI adapter, from llama-server --list-devices.</summary>
+    private static async Task<string?> VulkanDeviceAsync(string exe, string adapterName, CancellationToken ct)
+    {
+        var start = new ProcessStartInfo(exe, "--list-devices")
+        {
+            CreateNoWindow = true,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            WorkingDirectory = Path.GetDirectoryName(exe)!,
+        };
+        using var process = Process.Start(start) ?? throw new CuratorException("Could not start llama-server.");
+        var stderr = process.StandardError.ReadToEndAsync(ct);
+        var output = await process.StandardOutput.ReadToEndAsync(ct);
+        await stderr;
+        await process.WaitForExitAsync(ct);
+        return ParseVulkanDevice(output, adapterName);
+    }
+
+    /// <summary>Lines look like "  Vulkan1: AMD Radeon(TM) Graphics (31881 MiB, 30287 MiB free)".</summary>
+    internal static string? ParseVulkanDevice(string listing, string adapterName) =>
+        listing.Split('\n').Select(line => Regex.Match(line, @"^\s*(Vulkan\d+): (.+) \(\d+ MiB"))
+            .Where(m => m.Success && m.Groups[2].Value.Trim() == adapterName.Trim())
+            .Select(m => m.Groups[1].Value)
+            .FirstOrDefault();
 
     private void Remember(string? line)
     {

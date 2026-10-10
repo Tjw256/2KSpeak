@@ -1,5 +1,6 @@
 using TwoKSpeak.App.Diagnostics;
 using TwoKSpeak.App.Settings;
+using TwoKSpeak.Engine.Onnx;
 using TwoKSpeak.Engine.Setup;
 
 namespace TwoKSpeak.App.Setup;
@@ -35,12 +36,13 @@ public sealed class SetupCoordinator
     private double _bytesPerSecond;
     private (DateTime Time, long Done)? _sample;
 
-    /// <param name="gpuCapable">Picks the GPU build of llama.cpp; see <see cref="Components.Cleanup"/>.</param>
-    public SetupCoordinator(ComponentInstaller installer, bool gpuCapable, Func<AppSettings> settings)
+    /// <param name="gpu">Picks the llama.cpp build and what GPU mode contains; see <see cref="Components"/>.</param>
+    public SetupCoordinator(ComponentInstaller installer, GpuChoice? gpu, Func<AppSettings> settings)
     {
         _installer = installer;
         _settings = settings;
-        _components = new[] { Components.Speech, Components.Cleanup(gpuCapable), Components.CleanupSmall, Components.GpuMode }
+        // Without a usable GPU, GPU mode is only downloaded if chosen by hand; the CUDA variant is the old behaviour.
+        _components = new[] { Components.Speech, Components.Cleanup(gpu?.Backend), Components.CleanupSmall, Components.GpuMode(gpu?.Backend ?? GpuBackend.Cuda) }
             .ToDictionary(c => c.Id);
         foreach (var component in _components.Values.Where(installer.IsInstalled))
         {
@@ -81,7 +83,7 @@ public sealed class SetupCoordinator
         {
             plan.Add(_components[ComponentId.CleanupSmall]);
         }
-        if (settings.Device == RecognitionDevice.Gpu || settings.CleanupDevice == RecognitionDevice.Gpu)
+        if (settings.Device == RecognitionDevice.Gpu || settings.CleanupDevice == RecognitionDevice.Gpu || settings.GpuSpeedTestPending)
         {
             plan.Add(_components[ComponentId.GpuMode]);
         }

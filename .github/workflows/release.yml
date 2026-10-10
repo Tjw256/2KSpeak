@@ -31,11 +31,16 @@ jobs:
           dotnet test --project tests/TwoKSpeak.App.Tests -c Release -p:OrtFlavor=Cpu --no-build
 
       # Both executables self-contained in one folder: a fresh Windows needs no .NET install. CUDA, cuDNN and the
-      # models are not in the installer; the app downloads them on first run.
+      # models are not in the installer; the app downloads them on first run. The DirectML worker (AMD and Intel
+      # GPUs) goes in its own folder, because its ONNX Runtime can't share one with the CUDA build.
       - name: Publish
+        shell: pwsh
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true # a failed publish stops the step
           dotnet publish src/TwoKSpeak.App -c Release -r win-x64 --self-contained -p:Version=${{ env.VERSION }} -o publish
           dotnet publish src/TwoKSpeak.Worker -c Release -r win-x64 --self-contained -p:Version=${{ env.VERSION }} -o publish
+          dotnet publish src/TwoKSpeak.Worker -c Release -r win-x64 --self-contained -p:OrtFlavor=DirectML -p:Version=${{ env.VERSION }} -o publish/dml
+          Remove-Item publish/dml/*.pdb, publish/dml/DirectML.Debug.dll, publish/dml/onnxruntime.lib
 
       # The previous release lets vpk build a delta package, so updates download only what changed.
       - name: Previous release

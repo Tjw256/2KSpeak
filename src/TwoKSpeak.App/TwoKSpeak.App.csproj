@@ -29,7 +29,7 @@
   <!-- Copy the whole worker output (exe, dll, runtimeconfig) into the app folder. -->
   <Target Name="CopyWorker" AfterTargets="Build">
     <ItemGroup>
-      <WorkerFiles Include="$(MSBuildThisFileDirectory)..\TwoKSpeak.Worker\bin\$(Configuration)\net10.0\2KSpeak.Worker.*" />
+      <WorkerFiles Include="$(MSBuildThisFileDirectory)..\TwoKSpeak.Worker\$(BaseOutputPath)$(Configuration)\net10.0\2KSpeak.Worker.*" />
     </ItemGroup>
     <Copy SourceFiles="@(WorkerFiles)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
   </Target>

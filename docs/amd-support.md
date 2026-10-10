@@ -1,41 +1,78 @@
-# AMD GPU builds on Windows
+# AMD and Intel GPUs
 
-The default build and release workflow continue to use CUDA for NVIDIA. Build a separate DirectML variant for AMD GPUs:
+Since 0.6.0 the installer supports AMD (and, untested, Intel) graphics next to NVIDIA. AMD support was started by
+[@PepiBikerBTW](https://github.com/PepiBikerBTW) in #8.
+
+## How a GPU is chosen
+
+`Gpu.Choose` (`src/TwoKSpeak.Engine/Onnx/Gpu.cs`) reads the DirectX (DXGI) adapters and picks, in order:
+
+1. An NVIDIA card with 6 GB or more of its own memory: CUDA, as before.
+2. An AMD or Intel card with 6 GB or more: speech on DirectML, cleanup on llama.cpp's Vulkan build.
+3. An AMD integrated GPU with at least 6 GB of dedicated plus shared memory (16 GB of RAM in practice): DirectML and
+   Vulkan, but only if a speed test shows it beats the processor.
+4. Otherwise the CPU.
+
+The app and the worker run the same rule, so DirectML's device id (the DXGI index) matches the app's choice.
+llama.cpp numbers Vulkan devices its own way, so the app runs `llama-server --list-devices` and passes the device
+whose name matches the DXGI adapter. Without that, llama.cpp would split the model across every GPU, an integrated
+one included.
+
+`TWOKSPEAK_GPU=<DXGI index>` limits the choice to one adapter (multi-GPU PCs, or testing another adapter's path);
+`TWOKSPEAK_VULKAN_DEVICE=VulkanN` overrides the cleanup device.
+
+## Integrated GPUs: the speed test
+
+Integrated graphics range from fast (Radeon 780M, 12 compute units) to far slower than the processor (the 2-unit
+Radeon in desktop Ryzen 7000/9000 CPUs), and nothing Windows reports tells them apart. So on first start such a PC
+runs on the CPU, downloads GPU mode (the 1.3 GB fp16 model), then runs `2KSpeak.Worker --benchmark 3` on DirectML and
+on the CPU with the same 9 s phrase (`tests/fixtures/en-short.wav`, embedded in the worker). The GPU is used for
+speech and cleanup only if its median is under 80% of the CPU's. The verdict is stored in the settings
+(`GpuSpeedTestPending`) and never repeated; a device the user chose in the meantime is kept.
+
+On integrated GPUs the decoder runs on the CPU: its many tiny steps cost more on the GPU than they gain (29 ms vs
+144 ms per phrase on the Ryzen 7 7700's Radeon).
+
+## The second worker
+
+ONNX Runtime's CUDA and DirectML builds have the same file names, and the DirectML package stops at 1.24.4 while
+CUDA uses 1.31, so they can't share a folder. The installer ships the DirectML worker in `dml\2KSpeak.Worker.exe`
+(self-contained, about 110 MB on disk); the app starts it for GPU work on AMD and Intel. CPU work always uses the main
+worker, which includes ONNX Runtime's CPU provider.
+
+`-p:OrtFlavor=DirectML` builds into `bin\dml` and `obj\dml`, so it doesn't disturb the default build. To try it from
+a development build:
 
 ```powershell
-dotnet build 2KSpeak.slnx -c Release -p:OrtFlavor=DirectML
-dotnet test --project tests/TwoKSpeak.Engine.Tests -c Release -p:OrtFlavor=DirectML --no-build
-dotnet test --project tests/TwoKSpeak.App.Tests -c Release -p:OrtFlavor=DirectML --no-build
-dotnet publish src/TwoKSpeak.App -c Release -r win-x64 --self-contained -p:OrtFlavor=DirectML -o publish-dml
-dotnet publish src/TwoKSpeak.Worker -c Release -r win-x64 --self-contained -p:OrtFlavor=DirectML -o publish-dml
+dotnet build 2KSpeak.slnx -c Release
+dotnet publish src/TwoKSpeak.Worker -c Release -r win-x64 --self-contained -p:OrtFlavor=DirectML -o src/TwoKSpeak.App/bin/Release/net10.0-windows/dml
 ```
 
-Use the same `OrtFlavor` for the app and worker. ONNX Runtime's CUDA and DirectML native packages cannot simply be combined in one output directory. This change does not publish an AMD installer or change the existing auto-update channel; use a development/published build until a separate release channel is available.
+Without the `dml` folder, the app asks the main worker for DirectML, which fails and falls back to the CPU.
 
-In the DirectML build:
+## Measurements
 
-- Speech recognition uses the existing fp16 Parakeet models and DirectML. The hardware DXGI adapter with the largest dedicated memory is selected, avoiding an integrated GPU when a discrete card is available.
-- The worker accepts `--device dml` and applies the same 200-frame buckets used for CUDA.
-- Cleanup downloads the SHA-256-pinned llama.cpp b11534 Vulkan runtime into a separate `runtimes/llama-vulkan` directory, so existing CUDA DLLs cannot mix with it. CUDA and cuDNN are excluded from GPU-mode downloads.
-- AMD, Intel and NVIDIA adapters with at least 6 GiB of dedicated memory can enable GPU mode on first run. Hardware inference has only been verified on AMD RX 9070 XT; Intel and other cards remain unverified.
-- The existing CPU fallback and idle unloading remain in use.
+AMD Radeon RX 9070 XT (by @PepiBikerBTW), fp16, 200-frame buckets:
 
-llama.cpp chooses Vulkan devices independently of DXGI. To select a specific cleanup GPU, run its `llama-server.exe --list-devices`, then set `TWOKSPEAK_VULKAN_DEVICE` to the reported name (for example `Vulkan0`) before starting the app. The override is applied only to GPU cleanup in a DirectML build.
+- `cs-short.wav` (9.1 s): correct transcript, about 67–71 ms warm. `en-short.wav` (9.3 s): about 63 ms.
+- Varying 2–12 s inputs: about 167 ms mean on the second pass (DirectML recompiles for new shapes).
+- About 1.3–1.4 GiB of GPU memory for speech. Vulkan cleanup handled "Přijdu v pondělí, vlastně ne, v úterý ráno."
 
-## Local hardware validation
+Ryzen 7 7700 (8 cores) and its integrated Radeon (2 compute units, 485 MB dedicated, 31 GB shared), 2026-10-10:
 
-AMD Radeon RX 9070 XT, Windows, fp16 speech model, 200-frame buckets:
+| | Speech, 2–12 s phrases | Speech, 9.3 s phrase (speed test) | Cleanup prompt / generation |
+| --- | --- | --- | --- |
+| Integrated Radeon, DirectML / Vulkan | 706 ms (decoder on CPU) | 923–961 ms | 158 / 10 tokens/s |
+| CPU | 187 ms | 299–348 ms | 434 / 32 tokens/s |
+| RTX 5090 via DirectML, for comparison | 148 ms | | |
 
-- Czech fixture `cs-short.wav`: 9.1 s audio, correct reference transcript, about 67–71 ms for warm inference in the initial local build.
-- English fixture `en-short.wav`: 9.3 s audio, about 63 ms warm inference; reference differences include number formatting.
-- Varying 2–12 s inputs: about 167 ms mean on the second pass. DirectML still recompiles for changing shapes; these results do not replace the original CUDA benchmark.
-- Approximately 1.3–1.4 GiB of process GPU memory for speech.
-- Vulkan cleanup correctly handled the Czech correction “Přijdu v pondělí, vlastně ne, v úterý ráno.”
+The speed test chose the CPU there, as it should. The fast laptop chips (680M, 780M, 880M, 890M) have 6–8 times the
+compute units and are expected to beat their processors, but none has been tested yet.
 
-Re-run the bench for another card:
+Re-run the bench for another card (`TWOKSPEAK_GPU` picks the adapter):
 
 ```powershell
-dotnet run --project src/TwoKSpeak.Bench -c Release -p:OrtFlavor=DirectML -- --device dml --model <fp16-model-directory> --precision fp16 --bucket 200 --runs 5 tests/fixtures/cs-short.wav
+dotnet run --project src/TwoKSpeak.Bench -c Release -p:OrtFlavor=DirectML -- --device dml --model <fp16-model-directory> --precision fp16 --bucket 200 --runs 5 --vary tests/fixtures/en-short.wav
 ```
 
-CI checks both CPU and DirectML builds without downloaded models or a hardware GPU. Real microphone capture, hotkey insertion, NVIDIA hardware inference and Intel hardware inference require additional hardware testing.
+CI builds and tests the CPU and DirectML flavors without a GPU; hardware inference is only checked by hand.
