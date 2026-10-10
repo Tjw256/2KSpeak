@@ -35,6 +35,18 @@ public sealed class StoreTests : IDisposable
     }
 
     [Fact]
+    public void CleanupDeviceStaysUnsetUntilTheFirstStartPicksOne()
+    {
+        var store = new SettingsStore(PathOf("settings.json"));
+        Assert.Equal((Cleanup.LargeModel, TypeWhen.Released, (RecognitionDevice?)null),
+            (store.Current.Cleanup, store.Current.TypeWhen, store.Current.CleanupDevice));
+
+        store.Update(s => s with { CleanupDevice = RecognitionDevice.Gpu });
+
+        Assert.Equal(RecognitionDevice.Gpu, new SettingsStore(PathOf("settings.json")).Current.CleanupDevice);
+    }
+
+    [Fact]
     public void HandEditedSettingsAreClampedAndBadHotkeysReset()
     {
         Directory.CreateDirectory(_dir);

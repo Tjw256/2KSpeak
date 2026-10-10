@@ -29,6 +29,7 @@ public partial class App : Application
     private bool _isListening;
     private KeyboardHook? _hook;
     private WorkerClient? _worker;
+    private CuratorClient? _curator;
     private SileroVad? _vad;
     private ModelRamCache? _ramCache;
     private SettingsStore? _settings;
@@ -65,6 +66,13 @@ public partial class App : Application
         AppDomain.CurrentDomain.UnhandledException += (_, args) => Log.Write($"unhandled exception: {args.ExceptionObject}");
         TaskScheduler.UnobservedTaskException += (_, args) => Log.Write($"unobserved task exception: {args.Exception}");
         _settings = new SettingsStore(AppPaths.Settings);
+        if (_settings.Current.CleanupDevice is null)
+        {
+            // First start: the cleanup model goes on the GPU only if it fits next to the speech model.
+            var capable = GpuCapability.CanRunCurator();
+            Log.Write($"cleanup device chosen: {(capable ? "GPU" : "CPU")}");
+            _settings.Update(s => s with { CleanupDevice = capable ? RecognitionDevice.Gpu : RecognitionDevice.Cpu });
+        }
         var settings = _settings.Current;
         var missing = MissingModels(settings);
         if (missing.Count > 0)
@@ -82,11 +90,12 @@ public partial class App : Application
 
         _vad = new SileroVad(AppPaths.SileroVad);
         _worker = new WorkerClient(() => _settings.Current);
+        _curator = new CuratorClient(() => _settings.Current);
         _hook = new KeyboardHook(settings.Hotkey);
-        _flyout = new FlyoutWindow(_settings, _history, _worker, ShowSettings);
+        _flyout = new FlyoutWindow(_settings, _history, _worker, _curator, ShowSettings);
         var view = new ListeningView(new OverlayWindow(), listening => Dispatcher.BeginInvoke(() => SetListening(listening)));
         var testAudio = Environment.GetEnvironmentVariable("TWOKSPEAK_TEST_AUDIO");
-        var controller = new DictationController(() => _settings.Current, _worker, _vad, view,
+        var controller = new DictationController(() => _settings.Current, _worker, _curator, _vad, view,
             s => testAudio is null ? new Microphone(Microphone.ResolveDevice(s.Microphone)) : new WavAudioSource(testAudio));
         controller.TranscriptCompleted += text =>
         {
@@ -157,6 +166,11 @@ public partial class App : Application
         {
             _ = ApplyWorkerSettingsAsync();
         }
+        if (previous.Cleanup != current.Cleanup || previous.CleanupDevice != current.CleanupDevice
+            || previous.IdleUnloadMinutes != current.IdleUnloadMinutes)
+        {
+            _ = ApplyCuratorSettingsAsync();
+        }
         if (previous.Device != current.Device || previous.KeepModelInRam != current.KeepModelInRam)
         {
             HoldModelsInRam(current);
@@ -176,6 +190,18 @@ public partial class App : Application
         catch (Exception ex)
         {
             Log.Write($"applying worker settings failed: {ex}");
+        }
+    }
+
+    private async Task ApplyCuratorSettingsAsync()
+    {
+        try
+        {
+            await _curator!.ApplySettingsAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"applying cleanup settings failed: {ex}");
         }
     }
 
@@ -210,6 +236,7 @@ public partial class App : Application
         {
         }
         _worker?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(5));
+        _curator?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(5));
         _vad?.Dispose();
         _ramCache?.Dispose();
         _tray?.Dispose();

@@ -11,6 +11,27 @@ public enum RecognitionDevice
     Cpu,
 }
 
+/// <summary>How much tidying the text gets before it is typed.</summary>
+public enum Cleanup
+{
+    /// <summary>Exactly what was recognised.</summary>
+    Off,
+    /// <summary>Hesitation sounds (um, ehm, eee) removed by the word filter.</summary>
+    Filter,
+    /// <summary>Filter, then Qwen3.5-0.8B deletes fillers and self-corrections.</summary>
+    SmallModel,
+    /// <summary>Filter, then Qwen3.5-2B deletes fillers and self-corrections.</summary>
+    LargeModel,
+}
+
+public enum TypeWhen
+{
+    /// <summary>Each phrase is typed after a short pause while the keys are still held.</summary>
+    Speaking,
+    /// <summary>Everything is typed at once when the keys are released.</summary>
+    Released,
+}
+
 /// <summary>User settings, stored as JSON in roaming AppData. Unknown or missing values fall back to defaults.</summary>
 public sealed record AppSettings
 {
@@ -22,7 +43,10 @@ public sealed record AppSettings
     public int PauseMs { get; init; } = 500;
     /// <summary>Microphone product name as Windows reports it; null is the system default.</summary>
     public string? Microphone { get; init; }
-    public bool RemoveFillers { get; init; } = true;
+    public Cleanup Cleanup { get; init; } = Cleanup.LargeModel;
+    /// <summary>Where the cleanup model runs; null until the first start picks one from the GPU's capability.</summary>
+    public RecognitionDevice? CleanupDevice { get; init; }
+    public TypeWhen TypeWhen { get; init; } = TypeWhen.Released;
     /// <summary>Keep the model files mapped in RAM so loading to the GPU never waits on the disk.</summary>
     public bool KeepModelInRam { get; init; } = true;
     /// <summary>Keep the last transcripts on disk so the tray history survives a restart.</summary>

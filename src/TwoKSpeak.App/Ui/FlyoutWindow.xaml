@@ -28,11 +28,30 @@
         <StackPanel x:Name="HistoryList" Margin="-6,10,4,0" />
         <TextBlock x:Name="EmptyText" Margin="0,18,0,18" Foreground="{StaticResource Text3}" />
 
-        <Border Margin="0,12,0,0" Style="{StaticResource SegmentGroup}">
-            <StackPanel Orientation="Horizontal">
-                <RadioButton x:Name="GpuOption" Style="{StaticResource Segment}" Content="GPU" GroupName="FlyoutDevice" />
-                <RadioButton x:Name="CpuOption" Style="{StaticResource Segment}" Content="CPU" GroupName="FlyoutDevice" />
-            </StackPanel>
-        </Border>
+        <Grid Margin="0,12,4,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <TextBlock VerticalAlignment="Center" Margin="0,0,16,0" Foreground="{StaticResource Text3}" Text="Speech" />
+            <Border Grid.Column="1" Style="{StaticResource SegmentGroup}">
+                <StackPanel Orientation="Horizontal">
+                    <RadioButton x:Name="GpuOption" Style="{StaticResource Segment}" Content="GPU" GroupName="FlyoutDevice" />
+                    <RadioButton x:Name="CpuOption" Style="{StaticResource Segment}" Content="CPU" GroupName="FlyoutDevice" />
+                </StackPanel>
+            </Border>
+            <TextBlock Grid.Row="1" VerticalAlignment="Center" Margin="0,8,16,0" Foreground="{StaticResource Text3}" Text="Cleanup" />
+            <Border Grid.Row="1" Grid.Column="1" Margin="0,8,0,0" Style="{StaticResource SegmentGroup}">
+                <StackPanel Orientation="Horizontal">
+                    <RadioButton x:Name="FilterOption" Style="{StaticResource Segment}" Content="Filter" GroupName="FlyoutCleanup" />
+                    <RadioButton x:Name="SmallOption" Style="{StaticResource Segment}" Content="0.8B" GroupName="FlyoutCleanup" />
+                    <RadioButton x:Name="LargeOption" Style="{StaticResource Segment}" Content="2B" GroupName="FlyoutCleanup" />
+                </StackPanel>
+            </Border>
+        </Grid>
     </StackPanel>
 </Window>

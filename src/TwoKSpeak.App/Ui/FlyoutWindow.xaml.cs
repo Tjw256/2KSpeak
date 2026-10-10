@@ -29,16 +29,18 @@ public partial class FlyoutWindow : Window
     private readonly SettingsStore _settings;
     private readonly HistoryStore _history;
     private readonly WorkerClient _worker;
+    private readonly CuratorClient _curator;
     private readonly DispatcherTimer _vramTimer = new() { Interval = TimeSpan.FromSeconds(1.5) };
     private long _hiddenAt;
     private bool _listening;
     private long? _vramBytes;
 
-    public FlyoutWindow(SettingsStore settings, HistoryStore history, WorkerClient worker, Action openSettings)
+    public FlyoutWindow(SettingsStore settings, HistoryStore history, WorkerClient worker, CuratorClient curator, Action openSettings)
     {
         _settings = settings;
         _history = history;
         _worker = worker;
+        _curator = curator;
         InitializeComponent();
         SourceInitialized += (_, _) => Dwm.Apply(this, roundCorners: true);
 
@@ -49,6 +51,9 @@ public partial class FlyoutWindow : Window
         };
         GpuOption.Checked += (_, _) => _settings.Update(s => s with { Device = RecognitionDevice.Gpu });
         CpuOption.Checked += (_, _) => _settings.Update(s => s with { Device = RecognitionDevice.Cpu });
+        FilterOption.Checked += (_, _) => _settings.Update(s => s with { Cleanup = Cleanup.Filter });
+        SmallOption.Checked += (_, _) => _settings.Update(s => s with { Cleanup = Cleanup.SmallModel });
+        LargeOption.Checked += (_, _) => _settings.Update(s => s with { Cleanup = Cleanup.LargeModel });
         Deactivated += (_, _) => HideFlyout();
         PreviewKeyDown += (_, e) =>
         {
@@ -61,6 +66,7 @@ public partial class FlyoutWindow : Window
         _settings.Changed += (_, _) => Ui(Refresh);
         _history.Changed += () => Ui(RefreshHistory);
         _worker.StateChanged += _ => Ui(RefreshStatus);
+        _curator.StateChanged += () => Ui(RefreshStatus);
         _vramTimer.Tick += async (_, _) => await UpdateVramAsync();
     }
 
@@ -110,6 +116,10 @@ public partial class FlyoutWindow : Window
         var device = _settings.Current.Device;
         GpuOption.IsChecked = device == RecognitionDevice.Gpu;
         CpuOption.IsChecked = device == RecognitionDevice.Cpu;
+        var cleanup = _settings.Current.Cleanup;
+        FilterOption.IsChecked = cleanup == Cleanup.Filter;
+        SmallOption.IsChecked = cleanup == Cleanup.SmallModel;
+        LargeOption.IsChecked = cleanup == Cleanup.LargeModel;
         EmptyText.Text = $"Hold {Hotkey.Format(_settings.Current.Hotkey)} to dictate";
         RefreshStatus();
         RefreshHistory();
@@ -132,19 +142,26 @@ public partial class FlyoutWindow : Window
         var detail = active == RecognitionDevice.Cpu && requested == RecognitionDevice.Gpu
             ? "CPU, GPU unavailable"
             : (active ?? requested) == RecognitionDevice.Gpu ? "GPU" : "CPU";
-        if (active == RecognitionDevice.Gpu && _vramBytes is > 0 and var bytes)
+        if (_vramBytes is > 0 and var bytes)
         {
             detail += $" · {bytes / GiB:0.0} GB";
         }
         StatusDetail.Text = "· " + detail;
     }
 
+    /// <summary>VRAM held by 2KSpeak: the speech worker and the cleanup model, whichever run on the GPU.</summary>
     private async Task UpdateVramAsync()
     {
-        var pid = _worker.ProcessId;
-        _vramBytes = pid is { } id && _worker.ActiveDevice == RecognitionDevice.Gpu
-            ? await Task.Run(() => VramMeter.DedicatedBytes(id))
-            : null;
+        var pids = new List<int>();
+        if (_worker is { ProcessId: { } worker, ActiveDevice: RecognitionDevice.Gpu })
+        {
+            pids.Add(worker);
+        }
+        if (_curator is { ProcessId: { } curator, ActiveDevice: RecognitionDevice.Gpu })
+        {
+            pids.Add(curator);
+        }
+        _vramBytes = pids.Count == 0 ? null : await Task.Run(() => pids.Sum(pid => VramMeter.DedicatedBytes(pid) ?? 0));
         RefreshStatus();
     }
 

@@ -21,13 +21,33 @@
                 </DockPanel>
                 <Rectangle Style="{StaticResource Divider}" />
                 <DockPanel Style="{StaticResource Row}">
-                    <ComboBox x:Name="PauseBox" DockPanel.Dock="Right" AutomationProperties.Name="Pause before typing" />
-                    <TextBlock VerticalAlignment="Center" Text="Pause before typing" />
+                    <Border DockPanel.Dock="Right" Style="{StaticResource SegmentGroup}">
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton x:Name="TypeSpeakingOption" Style="{StaticResource Segment}" Content="As I speak" GroupName="TypeWhen" />
+                            <RadioButton x:Name="TypeReleasedOption" Style="{StaticResource Segment}" Content="On release" GroupName="TypeWhen" />
+                        </StackPanel>
+                    </Border>
+                    <TextBlock VerticalAlignment="Center" Text="Type text" />
                 </DockPanel>
                 <Rectangle Style="{StaticResource Divider}" />
                 <DockPanel Style="{StaticResource Row}">
-                    <CheckBox x:Name="FillersToggle" DockPanel.Dock="Right" Style="{StaticResource Toggle}" AutomationProperties.Name="Remove filler words" />
-                    <TextBlock VerticalAlignment="Center" Text="Remove filler words" />
+                    <ComboBox x:Name="PauseBox" DockPanel.Dock="Right" AutomationProperties.Name="Phrase pause" />
+                    <TextBlock VerticalAlignment="Center" Text="Phrase pause" />
+                </DockPanel>
+                <Rectangle Style="{StaticResource Divider}" />
+                <DockPanel Style="{StaticResource Row}">
+                    <ComboBox x:Name="CleanupBox" DockPanel.Dock="Right" Width="200" AutomationProperties.Name="Cleanup" />
+                    <TextBlock VerticalAlignment="Center" Text="Cleanup" />
+                </DockPanel>
+                <Rectangle Style="{StaticResource Divider}" />
+                <DockPanel Style="{StaticResource Row}">
+                    <Border DockPanel.Dock="Right" Style="{StaticResource SegmentGroup}">
+                        <StackPanel x:Name="CleanupDevicePanel" Orientation="Horizontal">
+                            <RadioButton x:Name="CleanupGpuOption" Style="{StaticResource Segment}" Content="GPU" GroupName="CleanupDevice" />
+                            <RadioButton x:Name="CleanupCpuOption" Style="{StaticResource Segment}" Content="CPU" GroupName="CleanupDevice" />
+                        </StackPanel>
+                    </Border>
+                    <TextBlock VerticalAlignment="Center" Text="Cleanup runs on" />
                 </DockPanel>
                 <Rectangle Style="{StaticResource Divider}" />
                 <DockPanel Style="{StaticResource Row}">
