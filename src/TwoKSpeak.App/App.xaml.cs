@@ -26,6 +26,7 @@ public partial class App : Application
     private TaskbarIcon? _tray;
     private System.Drawing.Icon? _idleIcon;
     private System.Drawing.Icon? _listeningIcon;
+    private bool _isListening;
     private KeyboardHook? _hook;
     private WorkerClient? _worker;
     private SileroVad? _vad;
@@ -55,7 +56,12 @@ public partial class App : Application
         }
 
         Log.Write("starting");
-        DispatcherUnhandledException += (_, args) => Log.Write($"unhandled UI exception: {args.Exception}");
+        DispatcherUnhandledException += (_, args) =>
+        {
+            // A tray app that dies takes the hotkey with it; log and keep running instead.
+            Log.Write($"unhandled UI exception: {args.Exception}");
+            args.Handled = true;
+        };
         AppDomain.CurrentDomain.UnhandledException += (_, args) => Log.Write($"unhandled exception: {args.ExceptionObject}");
         TaskScheduler.UnobservedTaskException += (_, args) => Log.Write($"unobserved task exception: {args.Exception}");
         _settings = new SettingsStore(AppPaths.Settings);
@@ -107,7 +113,7 @@ public partial class App : Application
         _tray = new TaskbarIcon
         {
             ToolTipText = TrayToolTip(settings),
-            Icon = _idleIcon,
+            Icon = TrayIcon(listening: false),
             NoLeftClickDelay = true,
             ContextMenu = new ContextMenu { Items = { settingsItem, quit } },
         };
@@ -117,11 +123,19 @@ public partial class App : Application
 
     private static string TrayToolTip(AppSettings settings) => $"2KSpeak · hold {Hotkey.Format(settings.Hotkey)} to dictate";
 
+    /// <summary>A fresh copy each time: TaskbarIcon disposes the icon it is replacing.</summary>
+    private System.Drawing.Icon TrayIcon(bool listening) => (System.Drawing.Icon)(listening ? _listeningIcon! : _idleIcon!).Clone();
+
     private void SetListening(bool listening)
     {
+        if (listening == _isListening)
+        {
+            return;
+        }
+        _isListening = listening;
         if (_tray is not null)
         {
-            _tray.Icon = listening ? _listeningIcon : _idleIcon;
+            _tray.Icon = TrayIcon(listening);
         }
         _flyout?.SetListening(listening);
     }
