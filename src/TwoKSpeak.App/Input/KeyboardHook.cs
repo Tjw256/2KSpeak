@@ -11,7 +11,8 @@ namespace TwoKSpeak.App.Input;
 /// </summary>
 public sealed class KeyboardHook : IDisposable
 {
-    private readonly ChordTracker _tracker = new();
+    private readonly ChordTracker _tracker;
+    private readonly Lock _trackerLock = new(); // hook thread vs. settings UI
     private readonly Channel<ChordSignal> _signals = Channel.CreateUnbounded<ChordSignal>(
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
     private readonly LowLevelKeyboardProc _callback; // kept alive: the hook holds only a native pointer
@@ -20,8 +21,9 @@ public sealed class KeyboardHook : IDisposable
     private uint _threadId;
     private nint _hook;
 
-    public KeyboardHook()
+    public KeyboardHook(Modifiers chord)
     {
+        _tracker = new ChordTracker(chord);
         _callback = HookCallback;
         _thread = new Thread(Run) { IsBackground = true, Name = "2KSpeak keyboard hook" };
         _thread.Start();
@@ -29,6 +31,25 @@ public sealed class KeyboardHook : IDisposable
     }
 
     public ChannelReader<ChordSignal> Signals => _signals.Reader;
+
+    /// <summary>Raised (on a pool thread) when a hotkey recording started by <see cref="BeginCapture"/> ends.</summary>
+    public event Action<CaptureOutcome>? CaptureCompleted;
+
+    public void SetChord(Modifiers chord)
+    {
+        lock (_trackerLock)
+        {
+            _tracker.Chord = chord;
+        }
+    }
+
+    public void BeginCapture()
+    {
+        lock (_trackerLock)
+        {
+            _tracker.BeginCapture();
+        }
+    }
 
     private void Run()
     {
@@ -60,7 +81,11 @@ public sealed class KeyboardHook : IDisposable
         var message = (int)wParam;
         var down = message is WM_KEYDOWN or WM_SYSKEYDOWN;
         var own = (info.flags & LLKHF_INJECTED) != 0 && info.dwExtraInfo == OwnInputSignature;
-        var decision = _tracker.Process((ushort)info.vkCode, down, own);
+        HookDecision decision;
+        lock (_trackerLock)
+        {
+            decision = _tracker.Process((ushort)info.vkCode, down, own);
+        }
 
         if (decision.Inject.Count > 0)
         {
@@ -69,6 +94,10 @@ public sealed class KeyboardHook : IDisposable
         if (decision.Signal != ChordSignal.None)
         {
             _signals.Writer.TryWrite(decision.Signal);
+        }
+        if (decision.Capture is { } capture)
+        {
+            ThreadPool.QueueUserWorkItem(_ => CaptureCompleted?.Invoke(capture));
         }
         return decision.Swallow ? 1 : CallNextHookEx(_hook, nCode, wParam, lParam);
     }
@@ -80,7 +109,7 @@ public sealed class KeyboardHook : IDisposable
         {
             var vk = strokes[i].VirtualKey;
             var flags = strokes[i].Down ? 0u : KEYEVENTF_KEYUP;
-            if (vk is ChordTracker.RCtrl or ChordTracker.LWin or ChordTracker.RWin)
+            if (vk is Hotkey.RCtrl or Hotkey.RAlt or Hotkey.LWin or Hotkey.RWin)
             {
                 flags |= KEYEVENTF_EXTENDEDKEY;
             }

@@ -9,7 +9,9 @@ namespace TwoKSpeak.App.Inference;
 /// <summary>
 /// Owns the inference worker process: starts it on demand, sends requests one at a time, and in GPU mode
 /// shuts it down after an idle period so all VRAM (weights and CUDA's own overhead) is returned.
-/// A crashed worker is restarted on the next request.
+/// A crashed worker is restarted on the next request. If the GPU can't load or run the model (typically
+/// because another program filled the VRAM), the worker continues on the CPU until it next unloads, and the
+/// GPU is tried again on the following start.
 /// </summary>
 public sealed class WorkerClient : IAsyncDisposable
 {
@@ -21,7 +23,8 @@ public sealed class WorkerClient : IAsyncDisposable
     private readonly Func<AppSettings> _settings;
     private Process? _process;
     private NamedPipeClientStream? _pipe;
-    private RecognitionDevice _device;
+    /// <summary>The device the settings asked for when the running worker was started.</summary>
+    private RecognitionDevice _requested;
 
     public WorkerClient(Func<AppSettings> settings)
     {
@@ -32,6 +35,36 @@ public sealed class WorkerClient : IAsyncDisposable
     public event Action<WorkerState>? StateChanged;
 
     public WorkerState State { get; private set; } = WorkerState.Stopped;
+
+    /// <summary>Process id of the running worker, for the VRAM readout; null when none is running.</summary>
+    public int? ProcessId => _process is { HasExited: false } process ? process.Id : null;
+
+    /// <summary>The device the running worker uses; differs from the setting after a GPU fallback.</summary>
+    public RecognitionDevice? ActiveDevice { get; private set; }
+
+    /// <summary>
+    /// Applies changed settings: a different device stops the worker now (freeing its memory) instead of on the
+    /// next phrase; a different idle timeout is rescheduled.
+    /// </summary>
+    public async Task ApplySettingsAsync()
+    {
+        await _gate.WaitAsync();
+        try
+        {
+            if (_process is not null && _requested != _settings().Device)
+            {
+                await StopAsync();
+            }
+            else if (_process is not null)
+            {
+                ScheduleIdleUnload();
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
 
     /// <summary>Starts the worker if needed, without waiting for it. Called when recording begins.</summary>
     public void Prewarm() => _ = PrewarmAsync();
@@ -87,17 +120,30 @@ public sealed class WorkerClient : IAsyncDisposable
     private async Task<TranscribeResponse> SendAsync(TranscribeRequest request, CancellationToken ct)
     {
         await EnsureStartedAsync();
+        var response = await ExchangeAsync(request, ct);
+        if (response is ErrorResponse gpuError && ActiveDevice == RecognitionDevice.Gpu)
+        {
+            // Most likely CUDA ran out of memory mid-session; finish the dictation on the CPU instead of losing it.
+            Log.Write($"GPU transcription failed, continuing on CPU: {gpuError.Message}");
+            await StartAsync(_requested, gpuFailed: true);
+            response = await ExchangeAsync(request, ct);
+        }
+        return response switch
+        {
+            TranscribeResponse transcript => transcript,
+            ErrorResponse error => throw new WorkerException(error.Message),
+            _ => throw new WorkerException($"Unexpected response {response.GetType().Name}."),
+        };
+    }
+
+    private async Task<WorkerResponse> ExchangeAsync(TranscribeRequest request, CancellationToken ct)
+    {
         try
         {
             await WorkerProtocol.WriteRequestAsync(_pipe!, request, ct);
             var response = await WorkerProtocol.ReadResponseAsync(_pipe!, WorkerRequestKind.Transcribe, ct);
             ScheduleIdleUnload();
-            return response switch
-            {
-                TranscribeResponse transcript => transcript,
-                ErrorResponse error => throw new WorkerException(error.Message),
-                _ => throw new WorkerException($"Unexpected response {response.GetType().Name}."),
-            };
+            return response;
         }
         catch (IOException ex)
         {
@@ -109,18 +155,53 @@ public sealed class WorkerClient : IAsyncDisposable
 
     private async Task EnsureStartedAsync()
     {
-        var device = _settings().Device;
-        if (_process is { HasExited: false } && _pipe is { IsConnected: true } && _device == device)
+        var requested = _settings().Device;
+        if (_process is { HasExited: false } && _pipe is { IsConnected: true } && _requested == requested)
         {
             return;
         }
-        await StartAsync(device);
+        await StartAsync(requested, gpuFailed: false);
     }
 
-    private async Task StartAsync(RecognitionDevice device)
+    private async Task StartAsync(RecognitionDevice requested, bool gpuFailed)
     {
         await StopAsync();
         SetState(WorkerState.Loading);
+        try
+        {
+            if (requested == RecognitionDevice.Gpu && !gpuFailed)
+            {
+                try
+                {
+                    await LaunchAsync(RecognitionDevice.Gpu);
+                }
+                catch (Exception ex)
+                {
+                    Log.Write($"GPU unavailable, falling back to CPU: {ex.Message}");
+                    await StopAsync();
+                    SetState(WorkerState.Loading);
+                    await LaunchAsync(RecognitionDevice.Cpu);
+                }
+            }
+            else
+            {
+                await LaunchAsync(RecognitionDevice.Cpu);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"worker start failed: {ex.Message}");
+            await StopAsync();
+            SetState(WorkerState.Failed);
+            throw ex as WorkerException ?? new WorkerException("The recognition worker failed to start.", ex);
+        }
+        _requested = requested;
+        SetState(WorkerState.Ready);
+        ScheduleIdleUnload();
+    }
+
+    private async Task LaunchAsync(RecognitionDevice device)
+    {
         var watch = Stopwatch.StartNew();
         var pipeName = $"2KSpeak-worker-{Environment.ProcessId}-{Guid.NewGuid():N}";
         var exe = Path.Combine(AppContext.BaseDirectory, "2KSpeak.Worker.exe");
@@ -136,41 +217,29 @@ public sealed class WorkerClient : IAsyncDisposable
             },
         };
 
-        try
+        _process = Process.Start(start) ?? throw new WorkerException("Could not start the recognition worker.");
+        _pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+        using (var connect = new CancellationTokenSource(ConnectTimeout))
         {
-            _process = Process.Start(start) ?? throw new WorkerException("Could not start the recognition worker.");
-            _pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-            using (var connect = new CancellationTokenSource(ConnectTimeout))
-            {
-                await _pipe.ConnectAsync(connect.Token);
-            }
-            using var load = new CancellationTokenSource(LoadTimeout);
-            await WorkerProtocol.WriteRequestAsync(_pipe, new ReadyRequest(), load.Token);
-            var response = await WorkerProtocol.ReadResponseAsync(_pipe, WorkerRequestKind.Ready, load.Token);
-            if (response is ErrorResponse error)
-            {
-                throw new WorkerException($"The recognition model failed to load: {error.Message}");
-            }
-            _device = device;
-            Log.Write($"worker ready ({device}) in {watch.ElapsedMilliseconds} ms");
-            SetState(WorkerState.Ready);
-            ScheduleIdleUnload();
+            await _pipe.ConnectAsync(connect.Token);
         }
-        catch (Exception ex)
+        using var load = new CancellationTokenSource(LoadTimeout);
+        await WorkerProtocol.WriteRequestAsync(_pipe, new ReadyRequest(), load.Token);
+        var response = await WorkerProtocol.ReadResponseAsync(_pipe, WorkerRequestKind.Ready, load.Token);
+        if (response is ErrorResponse error)
         {
-            Log.Write($"worker start failed: {ex.Message}");
-            await StopAsync();
-            SetState(WorkerState.Failed);
-            throw ex as WorkerException ?? new WorkerException("The recognition worker failed to start.", ex);
+            throw new WorkerException($"The recognition model failed to load: {error.Message}");
         }
+        ActiveDevice = device;
+        Log.Write($"worker ready ({device}) in {watch.ElapsedMilliseconds} ms");
     }
 
     private void ScheduleIdleUnload()
     {
         var settings = _settings();
         // CPU mode holds only RAM, which the user has plenty of; keeping it avoids a reload on every use.
-        var due = settings.Device == RecognitionDevice.Gpu
-            ? TimeSpan.FromMinutes(Math.Max(1, settings.IdleUnloadMinutes))
+        var due = settings.Device == RecognitionDevice.Gpu && settings.IdleUnloadMinutes > 0
+            ? TimeSpan.FromMinutes(settings.IdleUnloadMinutes)
             : Timeout.InfiniteTimeSpan;
         _idleTimer.Change(due, Timeout.InfiniteTimeSpan);
     }
@@ -199,6 +268,7 @@ public sealed class WorkerClient : IAsyncDisposable
         var pipe = _pipe;
         _process = null;
         _pipe = null;
+        ActiveDevice = null;
         if (pipe is not null)
         {
             await pipe.DisposeAsync(); // the worker exits when its client disconnects

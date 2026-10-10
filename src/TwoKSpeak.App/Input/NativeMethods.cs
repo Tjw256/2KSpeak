@@ -127,6 +127,16 @@ internal static partial class NativeMethods
     public static partial nint GetForegroundWindow();
 
     [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool SetForegroundWindow(nint hWnd);
+
+    public const int ASFW_ANY = -1;
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool AllowSetForegroundWindow(int dwProcessId);
+
+    [LibraryImport("user32.dll")]
     public static partial uint GetWindowThreadProcessId(nint hWnd, out uint lpdwProcessId);
 
     [LibraryImport("user32.dll")]
