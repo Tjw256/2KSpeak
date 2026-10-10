@@ -25,6 +25,23 @@
                     ToolTip="Settings" AutomationProperties.Name="Settings" />
         </Grid>
 
+        <!-- Downloads in progress and a waiting update; each opens what it describes. -->
+        <Button x:Name="SetupRow" Style="{StaticResource RowButton}" Margin="-6,10,4,0" Visibility="Collapsed">
+            <StackPanel>
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Right" Margin="12,0,0,0" Foreground="{StaticResource Text3}" Text="Details" />
+                    <TextBlock x:Name="SetupText" TextTrimming="CharacterEllipsis" />
+                </DockPanel>
+                <ProgressBar x:Name="SetupMeter" Style="{StaticResource Meter}" Margin="0,8,0,2" />
+            </StackPanel>
+        </Button>
+        <Button x:Name="UpdateRow" Style="{StaticResource RowButton}" Margin="-6,4,4,0" Visibility="Collapsed">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Right" Margin="12,0,0,0" Text="Restart" />
+                <TextBlock x:Name="UpdateText" Foreground="{StaticResource Text2}" TextTrimming="CharacterEllipsis" />
+            </DockPanel>
+        </Button>
+
         <StackPanel x:Name="HistoryList" Margin="-6,10,4,0" />
         <TextBlock x:Name="EmptyText" Margin="0,18,0,18" Foreground="{StaticResource Text3}" />
 

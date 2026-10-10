@@ -2,7 +2,21 @@
 
 Local push-to-talk dictation for Windows. Hold **Ctrl+Win**, speak, and the text is typed into whatever field has focus. Runs offline from the system tray.
 
-> Work in progress. Dictation, cleanup, the tray panel and settings work; the installer and model downloader are next.
+## Install
+
+Download **2KSpeak-Setup.exe** from the [latest release](https://github.com/Tjw256/2KSpeak/releases/latest) and run
+it. The installer isn't code-signed yet, so Windows SmartScreen may say "Windows protected your PC": click
+**More info**, then **Run anyway**.
+
+On first start 2KSpeak downloads what it needs from the original publishers, each file checked against a pinned
+SHA-256: speech recognition first (0.7 GB, enough to dictate), then text cleanup (1.4 GB), then GPU mode (3.2 GB,
+NVIDIA cards with 6 GB or more only: CUDA, cuDNN and the fp16 model). Nothing has to be installed beforehand, not
+even CUDA. A setup window explains each part; it can be closed, and downloads resume after a lost connection or a
+restart. Until GPU mode arrives, dictation runs on the CPU.
+
+Updates download silently from GitHub releases and apply the next time 2KSpeak starts, or right away from
+"Update ready · Restart" in the tray panel. Uninstalling (Settings → Apps) also removes the downloaded models,
+settings and history.
 
 ## Behaviour
 
@@ -38,15 +52,23 @@ dotnet test --project tests/TwoKSpeak.App.Tests -c Release
 - `tools/render-app-icon.ps1` — renders `Ui/Icons.xaml` into `Assets/2KSpeak.ico` after artwork changes.
 - `src/TwoKSpeak.Worker` — inference process; exits on idle so GPU memory is returned.
 - `src/TwoKSpeak.Engine` — Parakeet TDT ONNX pipeline, Silero VAD, phrase segmenter, filler filter, IPC protocol,
-  curator (llama-server process, prompt, deletion-only guard).
+  curator (llama-server process, prompt, deletion-only guard), and the first-run downloader (`Setup/Components.cs`
+  pins every URL and hash).
 - `src/TwoKSpeak.Bench` — latency/VRAM benchmark; results in [docs/spike-results.md](docs/spike-results.md).
 - `tools/fetch-dev-models.sh` — downloads models and the CUDA/llama.cpp runtimes into `%LOCALAPPDATA%\2KSpeak`.
-  Model tests skip when the models are absent.
+  Model tests skip when the models are absent. A development build also downloads them itself on first start.
+- `TWOKSPEAK_DATA_DIR` — points models, logs, settings and history at another folder, e.g. to test a first run.
 
 Pass `-p:OrtFlavor=Cpu` to build against the CPU-only runtime (used by CI).
 
 End-to-end check without a microphone: start `2KSpeak.exe` with `TWOKSPEAK_TEST_AUDIO` set to a 16 kHz mono WAV
 (the app then "hears" that file instead of the microphone), then run `tools/e2e-dictation.ps1`.
+
+Releases: pushing a `v*` tag runs `.github/workflows/release.yml`, which publishes the app and worker self-contained,
+packs them with Velopack (`vpk`, with the Visual C++ runtime as a prerequisite) and publishes the GitHub release
+that installed copies update from. Release notes come from `docs/release-notes.md`. The app installs to
+`%LOCALAPPDATA%\2KSpeak.App`; downloads stay in `%LOCALAPPDATA%\2KSpeak`, because Setup wipes its own folder on a
+repair.
 
 Logs: `%LOCALAPPDATA%\2KSpeak\logs` (`app.log`, `worker.log`) — timings and errors only, never transcript text.
 

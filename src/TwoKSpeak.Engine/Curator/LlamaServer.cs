@@ -70,6 +70,12 @@ public sealed class LlamaServer : IAsyncDisposable
                 "--api-key", key,
             },
         };
+        if (gpu)
+        {
+            // The CUDA build of llama.cpp loads cudart and cuBLAS from the GPU mode download, shared with the worker.
+            // On the CPU it is left out, so the CUDA backend finds no runtime and claims no VRAM.
+            start.Environment["PATH"] = AppPaths.CudaRuntime + ";" + Environment.GetEnvironmentVariable("PATH");
+        }
 
         var job = new KillOnCloseJob();
         Process process;

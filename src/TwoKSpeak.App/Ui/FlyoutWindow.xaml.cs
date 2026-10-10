@@ -9,12 +9,15 @@ using TwoKSpeak.App.Diagnostics;
 using TwoKSpeak.App.Inference;
 using TwoKSpeak.App.Input;
 using TwoKSpeak.App.Settings;
+using TwoKSpeak.App.Setup;
+using TwoKSpeak.Engine.Setup;
 using static TwoKSpeak.App.Input.NativeMethods;
 
 namespace TwoKSpeak.App.Ui;
 
 /// <summary>
-/// Left-click tray panel: model status, the last transcripts (click to copy) and the GPU/CPU switch.
+/// Left-click tray panel: model status, downloads and updates, the last transcripts (click to copy) and the
+/// GPU/CPU switch.
 /// Opens next to the tray and closes as soon as it loses focus.
 /// </summary>
 public partial class FlyoutWindow : Window
@@ -30,17 +33,22 @@ public partial class FlyoutWindow : Window
     private readonly HistoryStore _history;
     private readonly WorkerClient _worker;
     private readonly CuratorClient _curator;
+    private readonly SetupCoordinator _setup;
+    private readonly Updater _updater;
     private readonly DispatcherTimer _vramTimer = new() { Interval = TimeSpan.FromSeconds(1.5) };
     private long _hiddenAt;
     private bool _listening;
     private long? _vramBytes;
 
-    public FlyoutWindow(SettingsStore settings, HistoryStore history, WorkerClient worker, CuratorClient curator, Action openSettings)
+    public FlyoutWindow(SettingsStore settings, HistoryStore history, WorkerClient worker, CuratorClient curator,
+        SetupCoordinator setup, Updater updater, Action openSettings, Action openSetup, Action restartToUpdate)
     {
         _settings = settings;
         _history = history;
         _worker = worker;
         _curator = curator;
+        _setup = setup;
+        _updater = updater;
         InitializeComponent();
         SourceInitialized += (_, _) => Dwm.Apply(this, roundCorners: true);
 
@@ -49,6 +57,12 @@ public partial class FlyoutWindow : Window
             HideFlyout();
             openSettings();
         };
+        SetupRow.Click += (_, _) =>
+        {
+            HideFlyout();
+            openSetup();
+        };
+        UpdateRow.Click += (_, _) => restartToUpdate();
         GpuOption.Checked += (_, _) => _settings.Update(s => s with { Device = RecognitionDevice.Gpu });
         CpuOption.Checked += (_, _) => _settings.Update(s => s with { Device = RecognitionDevice.Cpu });
         FilterOption.Checked += (_, _) => _settings.Update(s => s with { Cleanup = Cleanup.Filter });
@@ -67,6 +81,14 @@ public partial class FlyoutWindow : Window
         _history.Changed += () => Ui(RefreshHistory);
         _worker.StateChanged += _ => Ui(RefreshStatus);
         _curator.StateChanged += () => Ui(RefreshStatus);
+        _setup.Changed += () => Ui(() =>
+        {
+            if (IsVisible) // progress arrives several times a second
+            {
+                RefreshStatus();
+            }
+        });
+        _updater.Ready += () => Ui(RefreshStatus);
         _vramTimer.Tick += async (_, _) => await UpdateVramAsync();
     }
 
@@ -127,9 +149,10 @@ public partial class FlyoutWindow : Window
 
     private void RefreshStatus()
     {
+        RefreshDownloads();
         var state = _worker.State;
         StatusDot.Fill = (Brush)FindResource(_listening ? "Listening" : state == WorkerState.Ready ? "Text1" : "Text3");
-        StatusText.Text = _listening ? "Listening" : state switch
+        StatusText.Text = _listening ? "Listening" : !_setup.IsReady(ComponentId.Speech) ? "Setting up" : state switch
         {
             WorkerState.Ready => "Ready",
             WorkerState.Loading => "Loading",
@@ -139,7 +162,9 @@ public partial class FlyoutWindow : Window
 
         var requested = _settings.Current.Device;
         var active = _worker.ActiveDevice;
-        var detail = active == RecognitionDevice.Cpu && requested == RecognitionDevice.Gpu
+        var detail = requested == RecognitionDevice.Gpu && !_setup.IsReady(ComponentId.GpuMode)
+            ? "CPU for now"
+            : active == RecognitionDevice.Cpu && requested == RecognitionDevice.Gpu
             ? "CPU, GPU unavailable"
             : (active ?? requested) == RecognitionDevice.Gpu ? "GPU" : "CPU";
         if (_vramBytes is > 0 and var bytes)
@@ -147,6 +172,26 @@ public partial class FlyoutWindow : Window
             detail += $" · {bytes / GiB:0.0} GB";
         }
         StatusDetail.Text = "· " + detail;
+    }
+
+    /// <summary>The component downloading now (or the one that stopped), and a downloaded update.</summary>
+    private void RefreshDownloads()
+    {
+        var current = _setup.Status().FirstOrDefault(s => s.State is ComponentState.Working or ComponentState.Failed);
+        SetupRow.Visibility = current is null ? Visibility.Collapsed : Visibility.Visible;
+        if (current is not null)
+        {
+            var percent = 100.0 * current.Done / Math.Max(1, current.Component.Size);
+            SetupText.Text = current.State == ComponentState.Failed
+                ? $"Download stopped · {current.Component.Title}"
+                : current.Stage == InstallStage.WaitingForNetwork
+                ? $"Waiting for internet · {current.Component.Title}"
+                : $"Downloading {current.Component.Title} · {percent:0}%";
+            SetupMeter.Value = percent / 100;
+            SetupMeter.Visibility = current.State == ComponentState.Failed ? Visibility.Collapsed : Visibility.Visible;
+        }
+        UpdateRow.Visibility = _updater.ReadyVersion is null ? Visibility.Collapsed : Visibility.Visible;
+        UpdateText.Text = $"Update ready · {_updater.ReadyVersion}";
     }
 
     /// <summary>VRAM held by 2KSpeak: the speech worker and the cleanup model, whichever run on the GPU.</summary>
