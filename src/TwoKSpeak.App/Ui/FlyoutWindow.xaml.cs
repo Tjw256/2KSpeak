@@ -85,7 +85,8 @@ public partial class FlyoutWindow : Window
         Refresh();
         Opacity = 0; // positioned in device pixels after layout; avoids a flash at the old position
         Show();
-        PlaceNearTray();
+        GetCursorPos(out var cursor);
+        PlaceNearTray(cursor);
         Opacity = 1;
         Activate();
         SetForegroundWindow(new WindowInteropHelper(this).Handle);
@@ -247,19 +248,21 @@ public partial class FlyoutWindow : Window
     /// Bottom-right of the work area by the cursor (the tray click), staying inside the work area for any
     /// taskbar position.
     /// </summary>
-    private void PlaceNearTray()
+    private void PlaceNearTray(POINT cursor)
     {
-        UpdateLayout();
         var handle = new WindowInteropHelper(this).Handle;
-        var dpi = VisualTreeHelper.GetDpi(this);
-        var width = (int)(ActualWidth * dpi.DpiScaleX);
-        var height = (int)(ActualHeight * dpi.DpiScaleY);
-        var gap = (int)(Gap * dpi.DpiScaleX);
-
-        GetCursorPos(out var cursor);
         var info = new MONITORINFO { cbSize = (uint)Marshal.SizeOf<MONITORINFO>() };
         GetMonitorInfo(MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST), ref info);
         var work = info.rcWork;
+
+        // Move onto the tray's monitor first and measure there: with mixed scaling (e.g. 150% and 100%)
+        // Windows rescales the window when it changes monitor, so a size measured elsewhere is wrong.
+        SetWindowPos(handle, 0, work.Left, work.Top, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+        UpdateLayout();
+        GetWindowRect(handle, out var bounds);
+        var width = bounds.Right - bounds.Left;
+        var height = bounds.Bottom - bounds.Top;
+        var gap = (int)(Gap * VisualTreeHelper.GetDpi(this).DpiScaleX);
 
         var x = Math.Clamp(cursor.X - width / 2, work.Left + gap, Math.Max(work.Left + gap, work.Right - width - gap));
         int y;
