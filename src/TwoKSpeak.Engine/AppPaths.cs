@@ -1,3 +1,5 @@
+using TwoKSpeak.Engine.Onnx;
+
 namespace TwoKSpeak.Engine;
 
 /// <summary>
@@ -22,8 +24,8 @@ public static class AppPaths
     public static string SileroVad => Path.Combine(Models, "silero-vad", "silero_vad.onnx");
     public static string CuratorModels => Path.Combine(Models, "curator");
     public static string CudaRuntime => Path.Combine(LocalRoot, "runtimes", "cuda");
-    /// <summary>llama.cpp release build (CUDA), which carries its own CUDA runtime DLLs.</summary>
-    public static string LlamaRuntime => Path.Combine(LocalRoot, "runtimes", "llama");
+    /// <summary>Keep Vulkan separate so DLLs from an existing CUDA install cannot be loaded accidentally.</summary>
+    public static string LlamaRuntime => Path.Combine(LocalRoot, "runtimes", GpuBackend.IsDirectMl ? "llama-vulkan" : "llama");
     public static string Logs => Path.Combine(LocalRoot, "logs");
     /// <summary>Partial and not-yet-extracted downloads; emptied as components finish.</summary>
     public static string Downloads => Path.Combine(LocalRoot, "downloads");

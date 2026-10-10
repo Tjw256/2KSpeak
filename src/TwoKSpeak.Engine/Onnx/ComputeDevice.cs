@@ -46,7 +46,7 @@ public static class OnnxSessionFactory
             case ComputeDevice.DirectML:
                 options.EnableMemoryPattern = false;
                 options.ExecutionMode = ExecutionMode.ORT_SEQUENTIAL;
-                options.AppendExecutionProvider_DML(0);
+                options.AppendExecutionProvider_DML(DirectMlAdapter.Select());
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(device), device, null);

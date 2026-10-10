@@ -43,6 +43,8 @@ if (device == ComputeDevice.Cuda)
     Environment.SetEnvironmentVariable("PATH", cudaDir + ";" + Environment.GetEnvironmentVariable("PATH"));
 }
 
+if (device == ComputeDevice.DirectML)
+    Console.WriteLine($"DirectML adapter {DirectMlAdapter.Select(out var adapterName)}: {adapterName}");
 var vramBefore = Vram.UsedMiB();
 var sw = Stopwatch.StartNew();
 using var recognizer = new ParakeetRecognizer(ParakeetModelFiles.FromDirectory(modelDir, precision), device, decoderDevice)

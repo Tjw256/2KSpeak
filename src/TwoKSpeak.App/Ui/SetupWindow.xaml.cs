@@ -137,7 +137,7 @@ public partial class SetupWindow : Window
         ComponentId.Speech => "Turns your voice into text. Needed to dictate.",
         ComponentId.Cleanup => "Removes “um”s and words you corrected yourself.",
         ComponentId.CleanupSmall => "A lighter cleanup model for slower computers.",
-        _ => "Makes dictation faster on your NVIDIA graphics card.",
+        _ => "Makes dictation faster on your graphics card.",
     };
 
     private sealed class Row

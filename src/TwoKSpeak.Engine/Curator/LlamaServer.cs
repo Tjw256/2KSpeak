@@ -4,6 +4,7 @@ using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
+using TwoKSpeak.Engine.Onnx;
 
 namespace TwoKSpeak.Engine.Curator;
 
@@ -70,11 +71,18 @@ public sealed class LlamaServer : IAsyncDisposable
                 "--api-key", key,
             },
         };
-        if (gpu)
+        if (gpu && !GpuBackend.IsDirectMl)
         {
             // The CUDA build of llama.cpp loads cudart and cuBLAS from the GPU mode download, shared with the worker.
             // On the CPU it is left out, so the CUDA backend finds no runtime and claims no VRAM.
             start.Environment["PATH"] = AppPaths.CudaRuntime + ";" + Environment.GetEnvironmentVariable("PATH");
+        }
+        if (gpu && GpuBackend.IsDirectMl &&
+            Environment.GetEnvironmentVariable("TWOKSPEAK_VULKAN_DEVICE") is { Length: > 0 } vulkanDevice)
+        {
+            // Vulkan's device indices are not DXGI indices. Let llama.cpp choose unless explicitly overridden.
+            start.ArgumentList.Add("--device");
+            start.ArgumentList.Add(vulkanDevice);
         }
 
         var job = new KillOnCloseJob();

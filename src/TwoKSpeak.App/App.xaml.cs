@@ -75,7 +75,7 @@ public partial class App : Application
         TaskScheduler.UnobservedTaskException += (_, args) => Log.Write($"unobserved task exception: {args.Exception}");
         var firstRun = !File.Exists(AppPaths.Settings);
         _settings = new SettingsStore(AppPaths.Settings);
-        // An NVIDIA card with room for both models gets GPU mode; anything else stays on the CPU and skips its download.
+        // A card supported by this build with room for both models gets GPU mode; otherwise use CPU.
         var gpuCapable = GpuCapability.CanRunCurator();
         if (firstRun)
         {
