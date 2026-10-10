@@ -7,6 +7,7 @@ using TwoKSpeak.App.Diagnostics;
 using TwoKSpeak.App.Input;
 using TwoKSpeak.App.Settings;
 using TwoKSpeak.Engine;
+using TwoKSpeak.Engine.Curator;
 
 namespace TwoKSpeak.App.Ui;
 
@@ -35,7 +36,11 @@ public partial class SettingsWindow : Window
         HotkeyButton.Click += (_, _) => BeginHotkeyCapture();
         _hook.CaptureCompleted += outcome => Dispatcher.BeginInvoke(() => EndHotkeyCapture(outcome));
         PauseBox.SelectionChanged += (_, _) => Apply(PauseBox, (s, ms) => s with { PauseMs = (int)ms! });
-        FillersToggle.Click += (_, _) => Apply(s => s with { RemoveFillers = FillersToggle.IsChecked == true });
+        TypeSpeakingOption.Checked += (_, _) => Apply(s => s with { TypeWhen = TypeWhen.Speaking });
+        TypeReleasedOption.Checked += (_, _) => Apply(s => s with { TypeWhen = TypeWhen.Released });
+        CleanupBox.SelectionChanged += (_, _) => Apply(CleanupBox, (s, cleanup) => s with { Cleanup = (Cleanup)cleanup! });
+        CleanupGpuOption.Checked += (_, _) => Apply(s => s with { CleanupDevice = RecognitionDevice.Gpu });
+        CleanupCpuOption.Checked += (_, _) => Apply(s => s with { CleanupDevice = RecognitionDevice.Cpu });
         MicrophoneBox.SelectionChanged += (_, _) => Apply(MicrophoneBox, (s, name) => s with { Microphone = (string?)name });
         GpuOption.Checked += (_, _) => Apply(s => s with { Device = RecognitionDevice.Gpu });
         CpuOption.Checked += (_, _) => Apply(s => s with { Device = RecognitionDevice.Cpu });
@@ -78,7 +83,12 @@ public partial class SettingsWindow : Window
             HotkeyButton.Content = Hotkey.Format(s.Hotkey);
         }
         Fill(PauseBox, PauseChoicesMs.Append(s.PauseMs).Distinct().Order().Select(ms => ((object?)ms, $"{ms} ms")), s.PauseMs);
-        FillersToggle.IsChecked = s.RemoveFillers;
+        TypeSpeakingOption.IsChecked = s.TypeWhen == TypeWhen.Speaking;
+        TypeReleasedOption.IsChecked = s.TypeWhen == TypeWhen.Released;
+        Fill(CleanupBox, Enum.GetValues<Cleanup>().Select(c => ((object?)c, CleanupLabel(c))), s.Cleanup);
+        CleanupGpuOption.IsChecked = s.CleanupDevice == RecognitionDevice.Gpu;
+        CleanupCpuOption.IsChecked = s.CleanupDevice == RecognitionDevice.Cpu;
+        CleanupDevicePanel.IsEnabled = s.Cleanup is Cleanup.SmallModel or Cleanup.LargeModel;
         var microphones = Microphone.DeviceNames();
         var choices = new List<(object?, string)> { (null, "Default") };
         choices.AddRange(microphones.Select(name => ((object?)name, name)));
@@ -98,6 +108,18 @@ public partial class SettingsWindow : Window
         // The Run key is the truth: a dev build or another tool may have changed it behind the setting's back.
         AutostartToggle.IsChecked = Autostart.IsRegistered();
         _loading = false;
+    }
+
+    private static string CleanupLabel(Cleanup cleanup)
+    {
+        var (label, model) = cleanup switch
+        {
+            Cleanup.Off => ("Off", (CuratorModel?)null),
+            Cleanup.Filter => ("Filler sounds only", null),
+            Cleanup.SmallModel => ("Qwen3.5 0.8B", CuratorModel.Small),
+            _ => ("Qwen3.5 2B", CuratorModel.Large),
+        };
+        return model is { } m && !File.Exists(CuratorModels.PathOf(m)) ? $"{label} (not downloaded)" : label;
     }
 
     private static void Fill(ComboBox box, IEnumerable<(object? Value, string Label)> choices, object? selected)

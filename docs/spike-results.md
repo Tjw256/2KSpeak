@@ -64,5 +64,7 @@ the deletion-only guard rejected it, so the raw text would have been typed.
 
 - GPU mode: fp16 on CUDA. CPU mode: int8.
 - Default: GPU recognition, Qwen3.5-2B curator on CPU (keeps dictation at ~2 GB VRAM), 5-minute idle unload.
+  *Revised in PR #6:* the curator defaults to the GPU when the card is NVIDIA with 6 GB+ (CPU otherwise), and text
+  is typed on release by default, so the cleanup runs once per dictation (~0.2 s GPU, ~1.3 s CPU measured end to end).
 - The GPU worker is a separate process that exits on idle, which is the only way to return CUDA's
   per-process overhead (~0.6 GB) along with the weights.
