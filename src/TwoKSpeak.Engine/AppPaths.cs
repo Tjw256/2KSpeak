@@ -6,11 +6,15 @@ namespace TwoKSpeak.Engine;
 /// </summary>
 public static class AppPaths
 {
-    public static string LocalRoot { get; } =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "2KSpeak");
+    /// <summary>Redirects both roots, so a first run can be tested without touching the real install or settings.</summary>
+    private static readonly string? TestRoot = Environment.GetEnvironmentVariable("TWOKSPEAK_DATA_DIR") is { Length: > 0 } dir ? dir : null;
 
-    public static string RoamingRoot { get; } =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "2KSpeak");
+    public static string LocalRoot { get; } = TestRoot
+        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "2KSpeak");
+
+    public static string RoamingRoot { get; } = TestRoot is null
+        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "2KSpeak")
+        : Path.Combine(TestRoot, "roaming");
 
     public static string Models => Path.Combine(LocalRoot, "models");
     public static string ParakeetFp16 => Path.Combine(Models, "parakeet-tdt-0.6b-v3-fp16");
@@ -21,6 +25,8 @@ public static class AppPaths
     /// <summary>llama.cpp release build (CUDA), which carries its own CUDA runtime DLLs.</summary>
     public static string LlamaRuntime => Path.Combine(LocalRoot, "runtimes", "llama");
     public static string Logs => Path.Combine(LocalRoot, "logs");
+    /// <summary>Partial and not-yet-extracted downloads; emptied as components finish.</summary>
+    public static string Downloads => Path.Combine(LocalRoot, "downloads");
     public static string Settings => Path.Combine(RoamingRoot, "settings.json");
     public static string History => Path.Combine(RoamingRoot, "history.json");
 }

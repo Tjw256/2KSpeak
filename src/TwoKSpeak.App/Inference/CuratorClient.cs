@@ -3,26 +3,30 @@ using TwoKSpeak.App.Diagnostics;
 using TwoKSpeak.App.Settings;
 using TwoKSpeak.Engine;
 using TwoKSpeak.Engine.Curator;
+using TwoKSpeak.Engine.Setup;
 
 namespace TwoKSpeak.App.Inference;
 
 /// <summary>
 /// Owns the cleanup model's llama-server: started when a hold begins, stopped after the idle timeout in GPU mode
 /// (like the speech worker), restarted on a model or device change. Every failure path returns null so the caller
-/// types the uncleaned text; cleanup must never cost the user their words.
+/// types the uncleaned text; cleanup must never cost the user their words. Until its download finishes, cleanup is
+/// skipped (the word filter still runs), and GPU requests run on the CPU until GPU mode is downloaded.
 /// </summary>
 public sealed class CuratorClient : IAsyncDisposable
 {
     private readonly Func<AppSettings> _settings;
+    private readonly Func<ComponentId, bool> _isInstalled;
     private readonly Lock _gate = new();
     private readonly Timer _idleTimer;
     private Task<LlamaServer>? _server;
     private (CuratorModel Model, RecognitionDevice Device)? _running;
     private string? _lastMissing;
 
-    public CuratorClient(Func<AppSettings> settings)
+    public CuratorClient(Func<AppSettings> settings, Func<ComponentId, bool> isInstalled)
     {
         _settings = settings;
+        _isInstalled = isInstalled;
         _idleTimer = new Timer(_ => _ = StopAsync("idle"));
     }
 
@@ -33,12 +37,16 @@ public sealed class CuratorClient : IAsyncDisposable
 
     public int? ProcessId => _server is { IsCompletedSuccessfully: true } task && !task.Result.HasExited ? task.Result.ProcessId : null;
 
-    private static CuratorModel? ModelFor(AppSettings settings) => settings.Cleanup switch
+    /// <summary>The model the settings ask for, if it and llama.cpp are downloaded.</summary>
+    private CuratorModel? ModelFor(AppSettings settings) => settings.Cleanup switch
     {
-        Cleanup.SmallModel => CuratorModel.Small,
-        Cleanup.LargeModel => CuratorModel.Large,
+        Cleanup.SmallModel when _isInstalled(ComponentId.Cleanup) && _isInstalled(ComponentId.CleanupSmall) => CuratorModel.Small,
+        Cleanup.LargeModel when _isInstalled(ComponentId.Cleanup) => CuratorModel.Large,
         _ => null,
     };
+
+    private RecognitionDevice DeviceFor(AppSettings settings) =>
+        settings.CleanupDevice == RecognitionDevice.Gpu && _isInstalled(ComponentId.GpuMode) ? RecognitionDevice.Gpu : RecognitionDevice.Cpu;
 
     /// <summary>
     /// Starts loading in the background when a hold begins, so the model is ready by the first phrase. Called again
@@ -106,7 +114,7 @@ public sealed class CuratorClient : IAsyncDisposable
         var wanted = ModelFor(settings);
         lock (_gate)
         {
-            if (_running is { } running && (wanted != running.Model || settings.CleanupDevice != running.Device))
+            if (_running is { } running && (wanted != running.Model || DeviceFor(settings) != running.Device))
             {
                 return StopAsync("settings changed");
             }
@@ -119,7 +127,7 @@ public sealed class CuratorClient : IAsyncDisposable
     {
         var settings = _settings();
         var model = ModelFor(settings) ?? throw new CuratorException("Cleanup model is off.");
-        var device = settings.CleanupDevice ?? RecognitionDevice.Cpu;
+        var device = DeviceFor(settings);
         lock (_gate)
         {
             if (_server is { } existing && _running == (model, device) && !(existing.IsCompletedSuccessfully && existing.Result.HasExited))

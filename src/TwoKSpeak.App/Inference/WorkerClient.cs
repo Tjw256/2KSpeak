@@ -3,6 +3,7 @@ using System.IO.Pipes;
 using TwoKSpeak.App.Diagnostics;
 using TwoKSpeak.App.Settings;
 using TwoKSpeak.Engine.Ipc;
+using TwoKSpeak.Engine.Setup;
 
 namespace TwoKSpeak.App.Inference;
 
@@ -11,7 +12,7 @@ namespace TwoKSpeak.App.Inference;
 /// shuts it down after an idle period so all VRAM (weights and CUDA's own overhead) is returned.
 /// A crashed worker is restarted on the next request. If the GPU can't load or run the model (typically
 /// because another program filled the VRAM), the worker continues on the CPU until it next unloads, and the
-/// GPU is tried again on the following start.
+/// GPU is tried again on the following start. Until GPU mode is downloaded, GPU requests run on the CPU.
 /// </summary>
 public sealed class WorkerClient : IAsyncDisposable
 {
@@ -21,14 +22,16 @@ public sealed class WorkerClient : IAsyncDisposable
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Timer _idleTimer;
     private readonly Func<AppSettings> _settings;
+    private readonly Func<ComponentId, bool> _isInstalled;
     private Process? _process;
     private NamedPipeClientStream? _pipe;
-    /// <summary>The device the settings asked for when the running worker was started.</summary>
+    /// <summary>The device asked for (settings and downloads allowing) when the running worker was started.</summary>
     private RecognitionDevice _requested;
 
-    public WorkerClient(Func<AppSettings> settings)
+    public WorkerClient(Func<AppSettings> settings, Func<ComponentId, bool> isInstalled)
     {
         _settings = settings;
+        _isInstalled = isInstalled;
         _idleTimer = new Timer(_ => _ = UnloadIfIdleAsync());
     }
 
@@ -51,7 +54,7 @@ public sealed class WorkerClient : IAsyncDisposable
         await _gate.WaitAsync();
         try
         {
-            if (_process is not null && _requested != _settings().Device)
+            if (_process is not null && _requested != Requested())
             {
                 await StopAsync();
             }
@@ -153,9 +156,13 @@ public sealed class WorkerClient : IAsyncDisposable
         }
     }
 
+    /// <summary>The settings' device, or the CPU while GPU mode is still downloading.</summary>
+    private RecognitionDevice Requested() =>
+        _settings().Device == RecognitionDevice.Gpu && _isInstalled(ComponentId.GpuMode) ? RecognitionDevice.Gpu : RecognitionDevice.Cpu;
+
     private async Task EnsureStartedAsync()
     {
-        var requested = _settings().Device;
+        var requested = Requested();
         if (_process is { HasExited: false } && _pipe is { IsConnected: true } && _requested == requested)
         {
             return;

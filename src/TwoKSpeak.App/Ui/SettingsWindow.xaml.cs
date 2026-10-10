@@ -6,8 +6,9 @@ using TwoKSpeak.App.Audio;
 using TwoKSpeak.App.Diagnostics;
 using TwoKSpeak.App.Input;
 using TwoKSpeak.App.Settings;
+using TwoKSpeak.App.Setup;
 using TwoKSpeak.Engine;
-using TwoKSpeak.Engine.Curator;
+using TwoKSpeak.Engine.Setup;
 
 namespace TwoKSpeak.App.Ui;
 
@@ -20,14 +21,16 @@ public partial class SettingsWindow : Window
     private readonly SettingsStore _settings;
     private readonly HistoryStore _history;
     private readonly KeyboardHook _hook;
+    private readonly SetupCoordinator _setup;
     private bool _loading;
     private bool _capturing;
 
-    public SettingsWindow(SettingsStore settings, HistoryStore history, KeyboardHook hook)
+    public SettingsWindow(SettingsStore settings, HistoryStore history, KeyboardHook hook, SetupCoordinator setup)
     {
         _settings = settings;
         _history = history;
         _hook = hook;
+        _setup = setup;
         InitializeComponent();
         SourceInitialized += (_, _) => Dwm.Apply(this, roundCorners: false);
         var version = typeof(SettingsWindow).Assembly.GetName().Version;
@@ -52,6 +55,7 @@ public partial class SettingsWindow : Window
         LogsButton.Click += (_, _) => Process.Start(new ProcessStartInfo(AppPaths.Logs) { UseShellExecute = true });
 
         _settings.Changed += (_, _) => Dispatcher.BeginInvoke(Load);
+        _setup.Installed += _ => Dispatcher.BeginInvoke(Load);
         _history.Changed += () => Dispatcher.BeginInvoke(() => ClearHistoryButton.IsEnabled = _history.Entries.Count > 0);
         Load();
     }
@@ -110,16 +114,17 @@ public partial class SettingsWindow : Window
         _loading = false;
     }
 
-    private static string CleanupLabel(Cleanup cleanup)
+    /// <summary>Models not downloaded yet say so; choosing one queues its download.</summary>
+    private string CleanupLabel(Cleanup cleanup)
     {
-        var (label, model) = cleanup switch
+        var (label, needs) = cleanup switch
         {
-            Cleanup.Off => ("Off", (CuratorModel?)null),
-            Cleanup.Filter => ("Filler sounds only", null),
-            Cleanup.SmallModel => ("Qwen3.5 0.8B", CuratorModel.Small),
-            _ => ("Qwen3.5 2B", CuratorModel.Large),
+            Cleanup.Off => ("Off", []),
+            Cleanup.Filter => ("Filler sounds only", []),
+            Cleanup.SmallModel => ("Qwen3.5 0.8B", new[] { ComponentId.Cleanup, ComponentId.CleanupSmall }),
+            _ => ("Qwen3.5 2B", new[] { ComponentId.Cleanup }),
         };
-        return model is { } m && !File.Exists(CuratorModels.PathOf(m)) ? $"{label} (not downloaded)" : label;
+        return needs.All(_setup.IsReady) ? label : $"{label} (not downloaded)";
     }
 
     private static void Fill(ComboBox box, IEnumerable<(object? Value, string Label)> choices, object? selected)

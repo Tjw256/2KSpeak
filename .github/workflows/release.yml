@@ -1,0 +1,65 @@
+name: Release
+
+# Pushing a tag like v0.5.0 builds the installer and publishes a GitHub release that installed copies update from.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - run: dotnet tool install -g vpk --version 1.2.161
+
+      - name: Version from tag
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          "VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Test
+        run: |
+          dotnet build 2KSpeak.slnx -c Release -p:OrtFlavor=Cpu
+          dotnet test --project tests/TwoKSpeak.Engine.Tests -c Release -p:OrtFlavor=Cpu --no-build
+          dotnet test --project tests/TwoKSpeak.App.Tests -c Release -p:OrtFlavor=Cpu --no-build
+
+      # Both executables self-contained in one folder: a fresh Windows needs no .NET install. CUDA, cuDNN and the
+      # models are not in the installer; the app downloads them on first run.
+      - name: Publish
+        run: |
+          dotnet publish src/TwoKSpeak.App -c Release -r win-x64 --self-contained -p:Version=${{ env.VERSION }} -o publish
+          dotnet publish src/TwoKSpeak.Worker -c Release -r win-x64 --self-contained -p:Version=${{ env.VERSION }} -o publish
+
+      # The previous release lets vpk build a delta package, so updates download only what changed.
+      - name: Previous release
+        run: vpk download github --repoUrl ${{ github.server_url }}/${{ github.repository }} --token ${{ secrets.GITHUB_TOKEN }} -o releases
+
+      - name: Pack
+        run: >
+          vpk pack -u 2KSpeak.App -v ${{ env.VERSION }} -r win-x64 -p publish -e 2KSpeak.exe -o releases
+          --packTitle 2KSpeak --packAuthors Tjw256
+          --icon src/TwoKSpeak.App/Assets/2KSpeak.ico
+          --framework vcredist143-x64 --noPortable
+          --releaseNotes docs/release-notes.md
+
+      - name: Upload
+        run: >
+          vpk upload github --repoUrl ${{ github.server_url }}/${{ github.repository }} --token ${{ secrets.GITHUB_TOKEN }}
+          -o releases --publish --tag ${{ github.ref_name }} --releaseName "2KSpeak ${{ env.VERSION }}"
+
+      # Velopack names the installer after the pack id; give people a plain name. Updates don't use this file.
+      - name: Rename installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          Copy-Item releases/2KSpeak.App-win-Setup.exe 2KSpeak-Setup.exe
+          gh release upload ${{ github.ref_name }} 2KSpeak-Setup.exe --repo ${{ github.repository }}
+          gh release delete-asset ${{ github.ref_name }} 2KSpeak.App-win-Setup.exe --repo ${{ github.repository }} --yes
