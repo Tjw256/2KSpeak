@@ -35,7 +35,7 @@ public sealed class SetupCoordinator
     private double _bytesPerSecond;
     private (DateTime Time, long Done)? _sample;
 
-    /// <param name="gpuCapable">Picks the CUDA build of llama.cpp; see <see cref="Components.Cleanup"/>.</param>
+    /// <param name="gpuCapable">Picks the GPU build of llama.cpp; see <see cref="Components.Cleanup"/>.</param>
     public SetupCoordinator(ComponentInstaller installer, bool gpuCapable, Func<AppSettings> settings)
     {
         _installer = installer;

@@ -18,13 +18,29 @@ Updates download silently from GitHub releases and apply the next time 2KSpeak s
 "Update ready · Restart" in the tray panel. Uninstalling (Settings → Apps) also removes the downloaded models,
 settings and history.
 
+## GPU support
+
+Dictation works on any PC; a supported graphics card makes it faster and keeps the CPU free.
+
+| Graphics card | Status |
+| --- | --- |
+| NVIDIA with 6 GB or more | **Supported by the installer.** GPU mode (CUDA) downloads on first run. |
+| AMD Radeon RX 9070 XT | **Works in a separate DirectML build** (speech on DirectML, cleanup on Vulkan), tested on that card only; contributed by [@PepiBikerBTW](https://github.com/PepiBikerBTW). Not in the installer yet: build it yourself, see [docs/amd-support.md](docs/amd-support.md). The installer runs on the CPU on AMD. |
+| AMD Radeon RX 7000, RX 6000 series and older | **Not supported yet.** Support for these cards still has to be done; they run on the CPU. |
+| Intel Arc | Untested. |
+| Anything else, or no graphics card | Runs on the CPU: text appears about 1–2 s after you let go instead of almost at once. |
+
 ## Behaviour
 
 - **Hold to talk.** Recording lasts as long as the keys are held; there is no length limit. The shortcut can be
   changed to any 2–3 of Ctrl, Win, Alt and Shift (Ctrl+Alt is refused because it is AltGr on many layouts).
 - **Typed on release, or as you speak.** By default the whole dictation is typed when you let go, while an overlay
   shows the text so far. Alternatively each phrase is typed as soon as you pause.
-- **English and Czech** via NVIDIA Parakeet TDT 0.6B v3, with punctuation and capitalisation.
+- **25 languages**, detected automatically, with punctuation and capitalisation, via NVIDIA Parakeet TDT 0.6B v3:
+  English, Bulgarian, Croatian, Czech, Danish, Dutch, Estonian, Finnish, French, German, Greek, Hungarian, Italian,
+  Latvian, Lithuanian, Maltese, Polish, Portuguese, Romanian, Russian, Slovak, Slovenian, Spanish, Swedish and
+  Ukrainian. Cleanup (below) is tuned for English and Czech; other languages are transcribed but get
+  less filler removal.
 - **GPU on demand.** The model is loaded to VRAM when you start talking and released after an idle timeout. CPU mode
   is available; if the GPU can't load or run the model, recognition continues on the CPU.
 - **Tray panel.** Left-click the tray icon for status (with VRAM in use), the last five transcripts (click one to

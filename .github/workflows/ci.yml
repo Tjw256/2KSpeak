@@ -13,14 +13,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-test:
+  build:
+    name: build (${{ matrix.ort-flavor }})
     runs-on: windows-latest
+    strategy:
+      matrix:
+        ort-flavor: [Cpu, DirectML]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-      # CPU flavor of ONNX Runtime: hosted runners have no GPU. Model tests skip without downloaded models.
-      - run: dotnet build 2KSpeak.slnx -c Release -p:OrtFlavor=Cpu
-      - run: dotnet test --project tests/TwoKSpeak.Engine.Tests -c Release -p:OrtFlavor=Cpu --no-build
-      - run: dotnet test --project tests/TwoKSpeak.App.Tests -c Release -p:OrtFlavor=Cpu --no-build
+      # Both flavors support CPU tests. Hosted runners cannot validate hardware GPU inference.
+      - run: dotnet build 2KSpeak.slnx -c Release -p:OrtFlavor=${{ matrix.ort-flavor }}
+      - run: dotnet test --project tests/TwoKSpeak.Engine.Tests -c Release -p:OrtFlavor=${{ matrix.ort-flavor }} --no-build
+      - run: dotnet test --project tests/TwoKSpeak.App.Tests -c Release -p:OrtFlavor=${{ matrix.ort-flavor }} --no-build
+
+  # The main branch ruleset requires a check named build-and-test; it passes only when every flavor passed.
+  # (A job skipped because a dependency failed would count as passing, hence always() and the explicit result check.)
+  build-and-test:
+    needs: build
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.build.result }}" = "success"

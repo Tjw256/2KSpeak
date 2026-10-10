@@ -3,6 +3,7 @@ using System.IO.Pipes;
 using TwoKSpeak.App.Diagnostics;
 using TwoKSpeak.App.Settings;
 using TwoKSpeak.Engine.Ipc;
+using TwoKSpeak.Engine.Onnx;
 using TwoKSpeak.Engine.Setup;
 
 namespace TwoKSpeak.App.Inference;
@@ -220,7 +221,7 @@ public sealed class WorkerClient : IAsyncDisposable
             {
                 "--pipe", pipeName,
                 "--parent", Environment.ProcessId.ToString(),
-                "--device", device == RecognitionDevice.Gpu ? "cuda" : "cpu",
+                "--device", device == RecognitionDevice.Gpu ? GpuBackend.WorkerDevice : "cpu",
             },
         };
 

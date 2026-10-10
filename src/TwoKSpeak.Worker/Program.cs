@@ -1,6 +1,6 @@
 // Inference worker: loads the recognizer on the requested device and serves transcription requests from the
 // tray app over a named pipe. It is a separate process so that exiting it returns all of CUDA's memory.
-// Usage: 2KSpeak.Worker --pipe <name> --parent <pid> --device cuda|cpu
+// Usage: 2KSpeak.Worker --pipe <name> --parent <pid> --device cuda|dml|cpu
 using System.Diagnostics;
 using System.IO.Pipes;
 using TwoKSpeak.Engine;
@@ -13,6 +13,7 @@ var pipeName = options["--pipe"];
 var device = options["--device"] switch
 {
     "cuda" => ComputeDevice.Cuda,
+    "dml" => ComputeDevice.DirectML,
     "cpu" => ComputeDevice.Cpu,
     var other => throw new ArgumentException($"Unknown device '{other}'."),
 };
@@ -33,13 +34,13 @@ if (device == ComputeDevice.Cuda)
 var loading = Task.Run(() =>
 {
     var watch = Stopwatch.StartNew();
-    var files = device == ComputeDevice.Cuda
+    var files = device != ComputeDevice.Cpu
         ? ParakeetModelFiles.FromDirectory(AppPaths.ParakeetFp16, "fp16")
         : ParakeetModelFiles.FromDirectory(AppPaths.ParakeetInt8, "int8");
     var recognizer = new ParakeetRecognizer(files, device)
     {
         // GPU kernels re-plan whenever the input length changes; 2 s buckets cut encoder time ~3x (docs/spike-results.md).
-        FeatureBucketFrames = device == ComputeDevice.Cuda ? 200 : 0,
+        FeatureBucketFrames = device != ComputeDevice.Cpu ? 200 : 0,
     };
     var loadMs = watch.ElapsedMilliseconds;
     // The first run initialises cuDNN/cuBLAS (~0.8 s); pay it now rather than on the first phrase.

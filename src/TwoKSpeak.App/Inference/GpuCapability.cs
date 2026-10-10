@@ -1,10 +1,11 @@
 using Microsoft.Win32;
+using TwoKSpeak.Engine.Onnx;
 
 namespace TwoKSpeak.App.Inference;
 
 /// <summary>
 /// Whether this PC has a GPU that can hold the cleanup model next to the speech model: an NVIDIA card (the
-/// llama.cpp build is CUDA) with enough dedicated memory to leave room for games and other programs.
+/// default build uses CUDA); DirectML builds also support AMD and Intel. Dedicated memory leaves room for other programs.
 /// </summary>
 public static class GpuCapability
 {
@@ -28,7 +29,7 @@ public static class GpuCapability
                 var device = adapter?.GetValue("MatchingDeviceId") as string ?? "";
                 // The driver records the real dedicated memory here; WMI's AdapterRAM caps at 4 GB.
                 var bytes = adapter?.GetValue("HardwareInformation.qwMemorySize") is long size ? size : 0;
-                if (device.Contains("ven_10de", StringComparison.OrdinalIgnoreCase) && bytes >= MinimumBytes)
+                if (SupportsVendor(device) && bytes >= MinimumBytes)
                 {
                     return true;
                 }
@@ -40,4 +41,9 @@ public static class GpuCapability
         }
         return false;
     }
+
+    internal static bool SupportsVendor(string device) =>
+        device.Contains("ven_10de", StringComparison.OrdinalIgnoreCase) ||
+        (GpuBackend.IsDirectMl && (device.Contains("ven_1002", StringComparison.OrdinalIgnoreCase) ||
+                                   device.Contains("ven_8086", StringComparison.OrdinalIgnoreCase)));
 }
