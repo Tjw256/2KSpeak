@@ -11,6 +11,8 @@ internal static partial class NativeMethods
     public const int WM_SYSKEYDOWN = 0x0104;
     public const int WM_SYSKEYUP = 0x0105;
     public const int WM_QUIT = 0x0012;
+    public const int WM_TIMER = 0x0113;
+    public const int WM_APP = 0x8000;
     public const uint LLKHF_INJECTED = 0x10;
     /// <summary>Tag in dwExtraInfo of every key event 2KSpeak sends, so its own hook can recognise them ("2KSP").</summary>
     public const nuint OwnInputSignature = 0x324B5350;
@@ -113,6 +115,17 @@ internal static partial class NativeMethods
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool PostThreadMessageW(uint idThread, uint msg, nint wParam, nint lParam);
+
+    /// <summary>With no window, WM_TIMER is posted to the calling thread's queue.</summary>
+    [LibraryImport("user32.dll")]
+    public static partial nuint SetTimer(nint hWnd, nuint nIDEvent, uint uElapse, nint lpTimerFunc);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool KillTimer(nint hWnd, nuint uIDEvent);
+
+    [LibraryImport("user32.dll")]
+    public static partial short GetAsyncKeyState(int vKey);
 
     [LibraryImport("kernel32.dll")]
     public static partial uint GetCurrentThreadId();

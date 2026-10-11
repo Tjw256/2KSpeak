@@ -204,6 +204,30 @@ public class ChordTrackerTests
         Assert.True(escape.Swallow);
         Assert.Equal(new CaptureOutcome(null), escape.Capture);
     }
+
+    [Fact]
+    public void KeyReleaseMissedOnTheLockScreenNoLongerBlocksTheChord()
+    {
+        // Win+L: the lock screen takes the keyboard before the hook sees L and Win go up.
+        Down(LWin);
+        Down(0x4C);
+        _tracker.ForgetReleasedKeys(_ => false);
+
+        Down(LCtrl);
+        Assert.Equal(ChordSignal.Start, Down(LWin).Signal);
+    }
+
+    [Fact]
+    public void ForgettingKeepsAHeldChord()
+    {
+        Down(LCtrl);
+        Down(LWin);
+
+        // Hidden keys look released to Windows; they must survive, or letting go would never stop the recording.
+        _tracker.ForgetReleasedKeys(_ => false);
+
+        Assert.Equal(ChordSignal.Stop, Up(LWin).Signal);
+    }
 }
 
 public class HotkeyTests

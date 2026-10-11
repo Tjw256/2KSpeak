@@ -71,6 +71,17 @@ public sealed class ChordTracker
         _captureOtherKey = false;
     }
 
+    /// <summary>
+    /// Forgets keys remembered as held that Windows says are up: their release was never seen (the hook was dropped,
+    /// or the lock screen or a UAC prompt had the keyboard). A stale key would otherwise block the chord until it is
+    /// pressed again. Hidden keys are kept: Windows never saw them go down, so it can't tell whether they are up.
+    /// </summary>
+    public void ForgetReleasedKeys(Func<ushort, bool> isDown)
+    {
+        _chordKeysDown.RemoveWhere(vk => !_hidden.Contains(vk) && !isDown(vk));
+        _otherKeysDown.RemoveWhere(vk => !isDown(vk));
+    }
+
     private bool IsChordKey(ushort vk) => (Chord & Hotkey.GroupOf(vk)) != 0;
 
     /// <param name="ownInjection">The event was sent by 2KSpeak itself (replayed keys, typed text).</param>
