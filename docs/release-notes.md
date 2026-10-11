@@ -1,4 +1,6 @@
-2KSpeak now uses AMD graphics too: Radeon graphics cards, and the Radeon graphics built into Ryzen laptops when it is faster than the processor. Hold **Ctrl + Win**, speak, let go: the text is typed into whatever field has the cursor. Everything runs on your PC.
+**Fixed in 0.6.1:** the shortcut could stop reacting until 2KSpeak was restarted. Windows sometimes drops a program's keyboard hook without telling it (for example when the PC is very busy), and a key released while the lock screen or a permission prompt was open could leave 2KSpeak thinking it was still held. 2KSpeak now renews its hook every 15 seconds and forgets keys Windows says are up, so the shortcut recovers by itself.
+
+0.6 also brings AMD graphics support: Radeon graphics cards, and the Radeon graphics built into Ryzen laptops when it is faster than the processor. Hold **Ctrl + Win**, speak, let go: the text is typed into whatever field has the cursor. Everything runs on your PC.
 
 ## Install
 
@@ -7,7 +9,7 @@
 3. If Windows asks to install the Microsoft Visual C++ runtime, allow it.
 4. 2KSpeak opens a setup window and downloads what it needs: about 0.7 GB to start dictating, then text cleanup and GPU mode (about 5 GB in total on NVIDIA, 3.3 GB on AMD). You can close the window: the download continues in the background, and the tray icon by the clock shows progress.
 
-Already have 0.5.0? It updates itself. On an AMD graphics card it then downloads GPU mode and switches over.
+Already have 0.5.0 or 0.6.0? It updates itself. On an AMD graphics card it then downloads GPU mode and switches over.
 
 ## Graphics cards
 
