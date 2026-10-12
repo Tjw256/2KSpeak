@@ -218,6 +218,47 @@ public class ChordTrackerTests
     }
 
     [Fact]
+    public void WinThatWindowsStillHoldsAfterTheShortcutIsReleased()
+    {
+        // Windows got the Win press without asking the hook, so it never sees the hidden release.
+        Down(LCtrl);
+        Down(LWin);
+        Up(LWin);
+
+        var stuck = _tracker.StuckChordKeys(vk => vk == LWin);
+
+        Assert.Equal([LWin], stuck);
+        Assert.Equal([new KeyStroke(MenuMask, true), new KeyStroke(MenuMask, false), new KeyStroke(LWin, false)], Releases(stuck));
+    }
+
+    [Fact]
+    public void NothingIsStuckWhenWindowsSeesNoChordKey()
+    {
+        Down(LCtrl);
+        Down(LWin);
+        Up(LWin);
+
+        Assert.Empty(_tracker.StuckChordKeys(_ => false));
+    }
+
+    [Fact]
+    public void ChordKeysTheUserVisiblyHoldsAreNotStuck()
+    {
+        // Win+Ctrl+Right: the chord keys were shown to Windows again for the shortcut and are still held.
+        Down(LCtrl);
+        Down(LWin);
+        Down(Right);
+
+        Assert.Empty(_tracker.StuckChordKeys(vk => vk is LCtrl or LWin));
+    }
+
+    [Fact]
+    public void TypingReleasesCtrlAltAndWinButNotShift()
+    {
+        Assert.Equal([LCtrl, LWin], TextTyper.StuckModifiers(vk => vk is LCtrl or LWin or LShift));
+    }
+
+    [Fact]
     public void ForgettingKeepsAHeldChord()
     {
         Down(LCtrl);
