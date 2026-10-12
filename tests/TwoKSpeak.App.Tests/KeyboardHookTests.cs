@@ -51,7 +51,8 @@ public class KeyboardHookTests
         Assert.SkipUnless(await SeesPressAsync(hook), "No interactive desktop to send keys to.");
 
         hook.DropHookForTest();
-        await Task.Delay(100, TestContext.Current.CancellationToken);
+        // Raw input within 100 ms of the last hook call counts as that call's own key, so wait past it.
+        await Task.Delay(300, TestContext.Current.CancellationToken);
         PressF24(); // reaches raw input but not the dropped hook
         await Task.Delay(DeadAfter * 3, TestContext.Current.CancellationToken);
 
