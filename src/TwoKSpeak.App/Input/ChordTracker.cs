@@ -82,6 +82,32 @@ public sealed class ChordTracker
         _otherKeysDown.RemoveWhere(vk => !isDown(vk));
     }
 
+    /// <summary>
+    /// Chord keys Windows thinks are held although it shouldn't see them: they are hidden, or already released.
+    /// That happens when Windows passes a press through without asking the hook (it answered too late); Windows then
+    /// never gets the release, and every later key becomes a Win or Ctrl shortcut.
+    /// </summary>
+    public IReadOnlyList<ushort> StuckChordKeys(Func<ushort, bool> windowsSeesDown) =>
+        Hotkey.ModifierKeys
+            .Where(vk => IsChordKey(vk) && windowsSeesDown(vk) && (_hidden.Contains(vk) || !_chordKeysDown.Contains(vk)))
+            .ToList();
+
+    /// <summary>Key releases for <paramref name="keys"/>, masked so releasing Win or Alt opens neither Start nor a menu.</summary>
+    public static IReadOnlyList<KeyStroke> Releases(IEnumerable<ushort> keys)
+    {
+        var strokes = new List<KeyStroke>();
+        foreach (var vk in keys)
+        {
+            if (Hotkey.GroupOf(vk) is Modifiers.Win or Modifiers.Alt)
+            {
+                strokes.Add(new KeyStroke(MenuMask, true));
+                strokes.Add(new KeyStroke(MenuMask, false));
+            }
+            strokes.Add(new KeyStroke(vk, false));
+        }
+        return strokes;
+    }
+
     private bool IsChordKey(ushort vk) => (Chord & Hotkey.GroupOf(vk)) != 0;
 
     /// <param name="ownInjection">The event was sent by 2KSpeak itself (replayed keys, typed text).</param>

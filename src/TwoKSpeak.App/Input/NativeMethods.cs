@@ -12,6 +12,9 @@ internal static partial class NativeMethods
     public const int WM_SYSKEYUP = 0x0105;
     public const int WM_QUIT = 0x0012;
     public const int WM_TIMER = 0x0113;
+    public const int WM_INPUT = 0x00FF;
+    public const nint HWND_MESSAGE = -3;
+    public const uint RIDEV_INPUTSINK = 0x00000100;
     public const int WM_APP = 0x8000;
     public const uint LLKHF_INJECTED = 0x10;
     /// <summary>Tag in dwExtraInfo of every key event 2KSpeak sends, so its own hook can recognise them ("2KSP").</summary>
@@ -62,6 +65,15 @@ internal static partial class NativeMethods
         public uint time;
         public int ptX;
         public int ptY;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RAWINPUTDEVICE
+    {
+        public ushort usUsagePage;
+        public ushort usUsage;
+        public uint dwFlags;
+        public nint hwndTarget;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -126,6 +138,21 @@ internal static partial class NativeMethods
 
     [LibraryImport("user32.dll")]
     public static partial short GetAsyncKeyState(int vKey);
+
+    [LibraryImport("user32.dll", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    public static partial nint CreateWindowExW(uint dwExStyle, string lpClassName, string? lpWindowName, uint dwStyle,
+        int x, int y, int nWidth, int nHeight, nint hWndParent, nint hMenu, nint hInstance, nint lpParam);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool DestroyWindow(nint hWnd);
+
+    [LibraryImport("user32.dll")]
+    public static partial nint DispatchMessageW(in MSG lpMsg);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool RegisterRawInputDevices([In] RAWINPUTDEVICE[] pRawInputDevices, uint uiNumDevices, uint cbSize);
 
     [LibraryImport("kernel32.dll")]
     public static partial uint GetCurrentThreadId();

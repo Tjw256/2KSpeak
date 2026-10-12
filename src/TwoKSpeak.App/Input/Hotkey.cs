@@ -24,6 +24,8 @@ public static class Hotkey
     public const ushort LWin = 0x5B;
     public const ushort RWin = 0x5C;
 
+    public static readonly ushort[] ModifierKeys = [LShift, RShift, LCtrl, RCtrl, LAlt, RAlt, LWin, RWin];
+
     public static Modifiers GroupOf(ushort vk) => vk switch
     {
         LCtrl or RCtrl or 0x11 => Modifiers.Ctrl,
